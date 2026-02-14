@@ -15,103 +15,119 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    // Use Claude to generate teammate-specific Crustdata conditions
-    const aiRes = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
-      messages: [
-        {
-          role: "user",
-          content: `You are a startup hiring advisor. A founder is building "${appName}" in "${industry}": "${description}".
+    // Engineer search — known-working filter pattern
+    const engineerConditions = [
+      {
+        op: "or",
+        conditions: [
+          { column: "current_employers.title", type: "(.)", value: "software engineer" },
+          { column: "current_employers.title", type: "(.)", value: "full stack developer" },
+          { column: "current_employers.title", type: "(.)", value: "frontend engineer" },
+          { column: "current_employers.title", type: "(.)", value: "backend engineer" },
+          { column: "current_employers.title", type: "(.)", value: "CTO" },
+          { column: "current_employers.title", type: "(.)", value: "tech lead" },
+          { column: "current_employers.title", type: "(.)", value: "engineering manager" },
+        ],
+      },
+      { column: "current_employers.company_headcount_latest", type: "<", value: 200 },
+    ];
 
-Generate TWO teammate search groups with Crustdata filter conditions:
+    // Growth search — known-working filter pattern
+    const growthConditions = [
+      {
+        op: "or",
+        conditions: [
+          { column: "current_employers.title", type: "(.)", value: "growth" },
+          { column: "current_employers.title", type: "(.)", value: "marketing" },
+          { column: "current_employers.title", type: "(.)", value: "community manager" },
+          { column: "current_employers.title", type: "(.)", value: "head of marketing" },
+          { column: "current_employers.title", type: "(.)", value: "content" },
+          { column: "current_employers.title", type: "(.)", value: "product manager" },
+        ],
+      },
+    ];
 
-Group 1: "Engineers" (people who could BUILD this product)
-- Engineers/CTOs with experience relevant to this specific product
-- Use titles like "Software Engineer", "Full Stack", "CTO", "Tech Lead", "Engineering Manager"
-- Filter by industries related to ${industry} (NOT "Venture Capital")
-- Search for people at companies of relevant size (growth-stage, 11-500 employees)
-- Include seniority: "Lead", "Manager", "Director", "CXO"
+    console.log("[find-teammates] Searching engineers and growth people...");
 
-Group 2: "Growth & Operations" (people who could GROW this product)
-- Product, marketing, growth, community people with domain experience in ${industry}
-- Use titles like "Product Manager", "Growth", "Marketing", "Head of", "Community"
-- Filter by industries related to ${industry}
-- Include seniority: "Manager", "Director", "Vice President", "CXO"
+    // Run both searches in parallel
+    const [engineerResult, growthResult] = await Promise.allSettled([
+      searchPeople(engineerConditions as Parameters<typeof searchPeople>[0], 15),
+      searchPeople(growthConditions as Parameters<typeof searchPeople>[0], 15),
+    ]);
 
-For each group, generate Crustdata conditions as arrays of filter objects.
-Available columns:
-- "current_employers.title" (type: "(.)" fuzzy)
-- "current_employers.company_industries" (type: "in" list match)
-- "current_employers.seniority_level" (type: "in") — values: "CXO", "Vice President", "Director", "Manager", "Senior", "Lead"
-- "current_employers.company_headcount_latest" (type: "=>") — minimum headcount
-- "current_employers.company_headcount_latest" (type: "=<") — maximum headcount
-- "region" (type: "(.)" fuzzy)
-
-For multiple titles use: { "op": "or", "conditions": [...] }
-
-Return ONLY valid JSON:
-{
-  "groups": [
-    {
-      "name": "Engineers",
-      "conditions": [...crustdata filter conditions...],
-      "matchReasonTemplate": "{title} at {company} — could build ${appName}'s technical foundation",
-      "limit": 15
-    },
-    {
-      "name": "Growth & Operations",
-      "conditions": [...crustdata filter conditions...],
-      "matchReasonTemplate": "{title} at {company} — could drive ${appName}'s growth in {industry}",
-      "limit": 15
-    }
-  ]
-}
-
-No markdown fences. No explanation. Just the JSON.`,
-        },
-      ],
-    });
-
-    const aiText = aiRes.content[0].type === "text" ? aiRes.content[0].text : "{}";
-    const cleaned = aiText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const parsed = JSON.parse(cleaned) as {
-      groups: Array<{
-        name: string;
-        conditions: Array<Record<string, unknown>>;
-        matchReasonTemplate: string;
-        limit: number;
-      }>;
-    };
-
-    console.log("[find-teammates] AI generated", parsed.groups?.length, "teammate groups");
-
-    // Search both groups in parallel
     const allContacts: Contact[] = [];
-    const results = await Promise.allSettled(
-      (parsed.groups || []).map((group) =>
-        searchPeople(group.conditions as Parameters<typeof searchPeople>[0], group.limit || 15)
-      )
-    );
 
-    results.forEach((result, i) => {
-      const group = parsed.groups[i];
-      if (result.status === "fulfilled") {
-        const isEngineer = group.name.toLowerCase().includes("engineer");
-        const contacts = result.value
-          .map((p, j) => mapPersonToContact(p, i * 100 + j, group.matchReasonTemplate))
-          .filter((c): c is Contact => c !== null)
-          .map((c) => ({
-            ...c,
-            roleTag: isEngineer ? "technical_evaluator" as const : "champion" as const,
-            contactCategory: "teammates" as const,
-          }));
-        allContacts.push(...contacts);
-        console.log(`[find-teammates] ${group.name}: found ${contacts.length} contacts`);
-      } else {
-        console.error(`[find-teammates] ${group.name} search failed:`, result.reason);
+    // Map engineers
+    if (engineerResult.status === "fulfilled") {
+      const engineers = engineerResult.value
+        .map((p, i) => mapPersonToContact(p, i))
+        .filter((c): c is Contact => c !== null)
+        .map((c) => ({
+          ...c,
+          roleTag: "technical_evaluator" as const,
+          contactCategory: "teammates" as const,
+        }));
+      allContacts.push(...engineers);
+      console.log(`[find-teammates] Engineers: found ${engineers.length} contacts`);
+    } else {
+      console.error("[find-teammates] Engineer search failed:", engineerResult.reason);
+    }
+
+    // Map growth people
+    if (growthResult.status === "fulfilled") {
+      const growthPeople = growthResult.value
+        .map((p, i) => mapPersonToContact(p, 100 + i))
+        .filter((c): c is Contact => c !== null)
+        .map((c) => ({
+          ...c,
+          roleTag: "champion" as const,
+          contactCategory: "teammates" as const,
+        }));
+      allContacts.push(...growthPeople);
+      console.log(`[find-teammates] Growth: found ${growthPeople.length} contacts`);
+    } else {
+      console.error("[find-teammates] Growth search failed:", growthResult.reason);
+    }
+
+    // Enrich match reasons with AI
+    if (allContacts.length > 0) {
+      try {
+        const peopleList = allContacts.slice(0, 25).map((c, i) =>
+          `${i + 1}. ${c.name}, ${c.title} at ${c.company} (${c.companySize} employees, ${c.industry}) [${c.roleTag === "technical_evaluator" ? "Engineer" : "Growth"}]`
+        ).join("\n");
+
+        const reasonRes = await client.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2048,
+          messages: [{
+            role: "user",
+            content: `For the product "${appName}" in ${industry}: "${description}"
+
+Generate a one-sentence match reason for each person explaining why they'd be a great co-founder or early hire for ${appName}. For engineers, focus on relevant technical experience. For growth people, focus on their domain expertise and audience access.
+
+People:
+${peopleList}
+
+Return ONLY a JSON array: [{"idx": 1, "matchReason": "..."}]
+No markdown fences.`,
+          }],
+        });
+
+        const reasonText = reasonRes.content[0].type === "text" ? reasonRes.content[0].text : "[]";
+        const reasons: Array<{ idx: number; matchReason: string }> = JSON.parse(
+          reasonText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
+        );
+
+        for (const r of reasons) {
+          const contact = allContacts[r.idx - 1];
+          if (contact && r.matchReason) {
+            contact.matchReason = r.matchReason;
+          }
+        }
+      } catch (err) {
+        console.error("[find-teammates] Match reason enrichment failed:", err);
       }
-    });
+    }
 
     return NextResponse.json({ contacts: allContacts, dataSource: "live" });
   } catch (error: unknown) {

@@ -134,6 +134,10 @@ export default function ProjectPage() {
   const [peopleSubTab, setPeopleSubTab] = useState<"customers" | "investors" | "teammates" | "linkedin">("customers");
   const [showAddUrl, setShowAddUrl] = useState(false);
   const [addUrlValue, setAddUrlValue] = useState("");
+  const [linkedInSubTab, setLinkedInSubTab] = useState<"relevant" | "competitors">("relevant");
+  const [editingCompetitors, setEditingCompetitors] = useState(false);
+  const [newCompetitor, setNewCompetitor] = useState("");
+  const [seoLoading, setSeoLoading] = useState(false);
 
   useEffect(() => {
     hydrate();
@@ -503,17 +507,117 @@ export default function ProjectPage() {
                     <span className="text-xs font-medium text-gray-400">Industry</span>
                     <p className="text-sm text-gray-700">{project.importedAnalysis.industry}</p>
                   </div>
-                  {project.importedAnalysis.competitors.length > 0 && (
-                    <div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-medium text-gray-400">Competitors</span>
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {project.importedAnalysis.competitors.map((c, i) => (
-                          <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">
-                            {c}
-                          </span>
-                        ))}
-                      </div>
+                      <button
+                        onClick={() => setEditingCompetitors(!editingCompetitors)}
+                        className="text-xs text-brand-primary hover:underline"
+                      >
+                        {editingCompetitors ? "Done" : "Edit"}
+                      </button>
                     </div>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {(project.detectedCompetitors || project.importedAnalysis.competitors).map((c, i) => (
+                        <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full flex items-center gap-1">
+                          {c}
+                          {editingCompetitors && (
+                            <button
+                              onClick={() => {
+                                const current = project.detectedCompetitors || [...project.importedAnalysis!.competitors];
+                                const updated = current.filter((_, idx) => idx !== i);
+                                updateProject(id, {
+                                  detectedCompetitors: updated,
+                                  importedAnalysis: { ...project.importedAnalysis!, competitors: updated },
+                                });
+                              }}
+                              className="text-gray-400 hover:text-red-500 ml-0.5"
+                            >
+                              x
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      {editingCompetitors && (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (newCompetitor.trim()) {
+                              const current = project.detectedCompetitors || [...project.importedAnalysis!.competitors];
+                              const updated = [...current, newCompetitor.trim()];
+                              updateProject(id, {
+                                detectedCompetitors: updated,
+                                importedAnalysis: { ...project.importedAnalysis!, competitors: updated },
+                              });
+                              setNewCompetitor("");
+                            }
+                          }}
+                          className="flex items-center gap-1"
+                        >
+                          <input
+                            type="text"
+                            value={newCompetitor}
+                            onChange={(e) => setNewCompetitor(e.target.value)}
+                            placeholder="+ Add"
+                            className="w-20 px-2 py-0.5 text-xs border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:ring-brand-primary/30"
+                          />
+                        </form>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Competitors card (when no importedAnalysis but we have detectedCompetitors) */}
+            {!project.importedAnalysis && project.detectedCompetitors && project.detectedCompetitors.length > 0 && (
+              <Card className="p-6 mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Competitors</h3>
+                  <button
+                    onClick={() => setEditingCompetitors(!editingCompetitors)}
+                    className="text-xs text-brand-primary hover:underline"
+                  >
+                    {editingCompetitors ? "Done" : "Edit"}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {project.detectedCompetitors.map((c, i) => (
+                    <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full flex items-center gap-1">
+                      {c}
+                      {editingCompetitors && (
+                        <button
+                          onClick={() => {
+                            const updated = project.detectedCompetitors!.filter((_, idx) => idx !== i);
+                            updateProject(id, { detectedCompetitors: updated });
+                          }}
+                          className="text-gray-400 hover:text-red-500 ml-0.5"
+                        >
+                          x
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                  {editingCompetitors && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (newCompetitor.trim()) {
+                          const updated = [...(project.detectedCompetitors || []), newCompetitor.trim()];
+                          updateProject(id, { detectedCompetitors: updated });
+                          setNewCompetitor("");
+                        }
+                      }}
+                      className="flex items-center gap-1"
+                    >
+                      <input
+                        type="text"
+                        value={newCompetitor}
+                        onChange={(e) => setNewCompetitor(e.target.value)}
+                        placeholder="+ Add"
+                        className="w-20 px-2 py-0.5 text-xs border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:ring-brand-primary/30"
+                      />
+                    </form>
                   )}
                 </div>
               </Card>
@@ -534,6 +638,130 @@ export default function ProjectPage() {
                   onChange={handleTargetingChange}
                   onUpdate={handleTargetingUpdate}
                 />
+              </Card>
+            )}
+
+            {/* SEO & AEO Audit */}
+            {project.externalAppUrl && (
+              <Card className="p-6 mt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+                    SEO & AEO Audit
+                  </h3>
+                  {!project.seoAudit && !seoLoading && (
+                    <button
+                      onClick={async () => {
+                        setSeoLoading(true);
+                        try {
+                          const res = await fetch("/api/seo-audit", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              url: project.externalAppUrl,
+                              appName: project.productPage?.name || project.title,
+                              description: project.description,
+                            }),
+                          });
+                          const result = await res.json();
+                          if (result.audit) {
+                            updateProject(id, { seoAudit: result.audit });
+                          }
+                        } catch (err) {
+                          console.error("SEO audit failed:", err);
+                        } finally {
+                          setSeoLoading(false);
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
+                    >
+                      Run Audit
+                    </button>
+                  )}
+                  {seoLoading && (
+                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                      <div className="w-4 h-4 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+                      Analyzing...
+                    </div>
+                  )}
+                </div>
+
+                {project.seoAudit ? (
+                  <div>
+                    {/* Score */}
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`text-3xl font-bold ${
+                        project.seoAudit.score >= 80 ? "text-green-600" :
+                        project.seoAudit.score >= 60 ? "text-yellow-600" :
+                        "text-red-600"
+                      }`}>
+                        {project.seoAudit.score}/100
+                      </div>
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            project.seoAudit.score >= 80 ? "bg-green-500" :
+                            project.seoAudit.score >= 60 ? "bg-yellow-500" :
+                            "bg-red-500"
+                          }`}
+                          style={{ width: `${project.seoAudit.score}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Checks */}
+                    <div className="space-y-1.5 mb-4">
+                      {project.seoAudit.checks.map((check, i) => (
+                        <div key={i} className="flex items-start gap-2 text-sm">
+                          <span className="shrink-0 mt-0.5">
+                            {check.status === "pass" ? "\u2705" : check.status === "warning" ? "\u26A0\uFE0F" : "\u274C"}
+                          </span>
+                          <div>
+                            <span className="font-medium text-gray-800">{check.item}</span>
+                            <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] font-medium rounded uppercase ${
+                              check.category === "aeo" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                            }`}>
+                              {check.category}
+                            </span>
+                            <p className="text-xs text-gray-500 mt-0.5">{check.detail}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Recommendations */}
+                    {project.seoAudit.recommendations.length > 0 && (
+                      <div className="mb-3">
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Recommendations</h4>
+                        <ul className="space-y-1">
+                          {project.seoAudit.recommendations.map((rec, i) => (
+                            <li key={i} className="text-sm text-gray-700 flex items-start gap-2">
+                              <span className="text-brand-primary shrink-0">&bull;</span>
+                              {rec}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Tool suggestions */}
+                    {project.seoAudit.toolSuggestions.length > 0 && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Suggested Tools</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                          {project.seoAudit.toolSuggestions.map((tool, i) => (
+                            <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">
+                              {tool}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : !seoLoading ? (
+                  <p className="text-sm text-gray-500">
+                    Run an audit to check your site&apos;s SEO and AI search engine optimization.
+                  </p>
+                ) : null}
               </Card>
             )}
           </>
@@ -711,21 +939,84 @@ export default function ProjectPage() {
                   Engage with people already talking about your space
                 </p>
 
-                {project.linkedInPosts && project.linkedInPosts.length > 0 ? (
-                  <div className="space-y-4">
-                    {project.linkedInPosts.map((post) => (
-                      <LinkedInPostCard key={post.id} post={post} />
-                    ))}
+                {/* LinkedIn sub-tabs: Relevant Posts / Competitor Mentions */}
+                {(project.competitorPosts && project.competitorPosts.length > 0) && (
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      onClick={() => setLinkedInSubTab("relevant")}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                        linkedInSubTab === "relevant"
+                          ? "bg-purple-600 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      Relevant Posts {project.linkedInPosts?.length ? `(${project.linkedInPosts.length})` : ""}
+                    </button>
+                    <button
+                      onClick={() => setLinkedInSubTab("competitors")}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                        linkedInSubTab === "competitors"
+                          ? "bg-purple-600 text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      Competitor Mentions {project.competitorPosts?.length ? `(${project.competitorPosts.length})` : ""}
+                    </button>
                   </div>
-                ) : (
-                  <Card className="p-8 text-center">
-                    <div className="w-16 h-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <span className="text-3xl">{"\u{1F4AC}"}</span>
-                    </div>
-                    <p className="text-sm text-gray-500">
-                      No LinkedIn posts found. Try re-running the analysis with a more specific description.
-                    </p>
-                  </Card>
+                )}
+
+                {/* Relevant Posts */}
+                {linkedInSubTab === "relevant" && (
+                  <>
+                    {project.linkedInPosts && project.linkedInPosts.length > 0 ? (
+                      <div className="space-y-4">
+                        {project.linkedInPosts.map((post) => (
+                          <LinkedInPostCard key={post.id} post={post} />
+                        ))}
+                      </div>
+                    ) : (
+                      <Card className="p-8 text-center">
+                        <div className="w-16 h-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                          <span className="text-3xl">{"\u{1F4AC}"}</span>
+                        </div>
+                        <p className="text-sm text-gray-500">
+                          No LinkedIn posts found. Try re-running the analysis with a more specific description.
+                        </p>
+                      </Card>
+                    )}
+                  </>
+                )}
+
+                {/* Competitor Mentions */}
+                {linkedInSubTab === "competitors" && (
+                  <>
+                    {project.detectedCompetitors && project.detectedCompetitors.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-4">
+                        {project.detectedCompetitors.map((c, i) => (
+                          <span key={i} className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded-full">
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {project.competitorPosts && project.competitorPosts.length > 0 ? (
+                      <div className="space-y-4">
+                        {project.competitorPosts.map((post) => (
+                          <LinkedInPostCard key={post.id} post={post} />
+                        ))}
+                      </div>
+                    ) : (
+                      <Card className="p-8 text-center">
+                        <div className="w-16 h-16 bg-orange-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                          <span className="text-3xl">{"\u{1F50D}"}</span>
+                        </div>
+                        <p className="text-sm text-gray-500">
+                          No competitor mentions found.
+                          {!project.detectedCompetitors?.length && " Add competitors in the Product Analysis card to search for mentions."}
+                        </p>
+                      </Card>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -815,6 +1106,42 @@ export default function ProjectPage() {
                     </p>
                   )}
                 </Card>
+              </div>
+            )}
+
+            {/* Growth Playbooks */}
+            {project.playbooks && project.playbooks.length > 0 && (
+              <div className="mt-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                  Growth Playbooks
+                </h2>
+                <p className="text-sm text-gray-500 mb-4">
+                  Step-by-step strategies tailored to your product
+                </p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {project.playbooks.map((playbook) => (
+                    <Card key={playbook.id} className="p-5">
+                      <div className="flex items-start gap-3 mb-3">
+                        <span className="text-2xl">{playbook.icon}</span>
+                        <div>
+                          <h3 className="font-semibold text-gray-900 text-sm">{playbook.title}</h3>
+                          <p className="text-xs text-gray-500 mt-0.5">{playbook.description}</p>
+                        </div>
+                      </div>
+                      <ol className="space-y-2 mb-3">
+                        {playbook.steps.map((step, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                            <span className="text-xs font-bold text-brand-primary bg-brand-primary/10 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5">
+                              {i + 1}
+                            </span>
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                      <p className="text-xs text-gray-400 italic">{playbook.relevance}</p>
+                    </Card>
+                  ))}
+                </div>
               </div>
             )}
           </div>

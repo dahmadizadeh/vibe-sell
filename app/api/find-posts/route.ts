@@ -8,35 +8,44 @@ export const maxDuration = 60;
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
-  const { description, appName, industry } = (await req.json()) as {
+  const { description, appName, industry, competitors } = (await req.json()) as {
     description: string;
     appName: string;
     industry: string;
+    competitors?: string[];
   };
 
   try {
-    // Step 1: Generate search keywords from product description
-    const keywordRes = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 256,
-      messages: [
-        {
-          role: "user",
-          content: `Generate 3-5 short LinkedIn search keyword phrases for finding posts relevant to "${appName}" in "${industry}": "${description}".
+    let keywords: string[];
+
+    if (competitors && competitors.length > 0) {
+      // Competitor-specific search: use competitor names directly as keywords
+      keywords = competitors;
+      console.log("[find-posts] Using competitor keywords:", keywords);
+    } else {
+      // Step 1: Generate search keywords from product description
+      const keywordRes = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 256,
+        messages: [
+          {
+            role: "user",
+            content: `Generate 3-5 short LinkedIn search keyword phrases for finding posts relevant to "${appName}" in "${industry}": "${description}".
 
 Each keyword should be 1-3 words. They will be joined with OR for a Crustdata LinkedIn post search.
 Good examples: ["customer retention", "SaaS churn", "user onboarding"]
 Bad examples: ["how to reduce customer churn in SaaS companies"] (too long)
 
 Return ONLY a JSON array of strings. No markdown fences. No explanation. Just the JSON array.`,
-        },
-      ],
-    });
+          },
+        ],
+      });
 
-    const keywordText = keywordRes.content[0].type === "text" ? keywordRes.content[0].text : "[]";
-    const keywords: string[] = JSON.parse(keywordText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim());
+      const keywordText = keywordRes.content[0].type === "text" ? keywordRes.content[0].text : "[]";
+      keywords = JSON.parse(keywordText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim());
 
-    console.log("[find-posts] Generated keywords:", keywords);
+      console.log("[find-posts] Generated keywords:", keywords);
+    }
 
     // Step 2: Search LinkedIn posts via Crustdata
     const rawPosts = await searchLinkedInPosts(keywords, 20);
@@ -62,7 +71,7 @@ Return ONLY a JSON array of strings. No markdown fences. No explanation. Just th
         {
           role: "user",
           content: `You are a LinkedIn engagement strategist. A founder built "${appName}": "${description}".
-
+${competitors?.length ? `\nCompetitors: ${competitors.join(", ")}. These posts mention competitors — the suggested comments should subtly position ${appName} as an alternative without being negative about the competitor.\n` : ""}
 Analyze these LinkedIn posts and for each, explain why it's relevant and how the founder should engage.
 
 Posts:

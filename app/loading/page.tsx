@@ -375,7 +375,7 @@ function LoadingContent() {
             try {
               let res: Response;
               if (useDirectConditions) {
-                // Use raw Crustdata conditions with match reason template
+                // Use raw Crustdata conditions with match reason template + AI enrichment
                 res = await fetch("/api/find-people", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -383,6 +383,8 @@ function LoadingContent() {
                     conditions: group.crustdataConditions,
                     limit: group.count,
                     matchReasonTemplate: group.matchReasonTemplate,
+                    appName: productPage?.name || "My App",
+                    description: enrichedDescription,
                   }),
                 });
               } else {
@@ -469,6 +471,11 @@ function LoadingContent() {
       let investors: Contact[] | undefined;
       let teammates: Contact[] | undefined;
       let linkedInPosts: LinkedInPost[] | undefined;
+      let competitorPosts: LinkedInPost[] | undefined;
+
+      // Extract competitor names from viability analysis
+      const competitors = viabilityAnalysis?.dimensions?.competition?.competitors?.map((c) => c.name) || [];
+      const detectedCompetitors = competitors;
 
       const networkBody = {
         description: enrichedDescription,
@@ -476,7 +483,10 @@ function LoadingContent() {
         industry: targeting?.industries?.[0] || "Technology",
       };
 
-      const [investorsResult, teammatesResult, postsResult] = await Promise.allSettled([
+      // Build competitor posts search alongside other network searches
+      const competitorKeywords = competitors.length > 0 ? competitors.slice(0, 5) : [];
+
+      const networkPromises: Promise<unknown>[] = [
         fetch("/api/find-investors", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -492,48 +502,111 @@ function LoadingContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(networkBody),
         }).then((r) => r.json()),
-      ]);
+      ];
 
-      if (investorsResult.status === "fulfilled" && investorsResult.value.contacts?.length > 0) {
-        investors = investorsResult.value.contacts as Contact[];
-        addStepDetail(`Found ${investorsResult.value.contacts.length} potential investors`);
-      }
-      if (teammatesResult.status === "fulfilled" && teammatesResult.value.contacts?.length > 0) {
-        teammates = teammatesResult.value.contacts as Contact[];
-        addStepDetail(`Found ${teammatesResult.value.contacts.length} potential teammates`);
-      }
-      if (postsResult.status === "fulfilled" && postsResult.value.posts?.length > 0) {
-        linkedInPosts = postsResult.value.posts as LinkedInPost[];
-        addStepDetail(`Found ${postsResult.value.posts.length} relevant LinkedIn posts`);
+      // Add competitor posts search if we have competitor names
+      if (competitorKeywords.length > 0) {
+        networkPromises.push(
+          fetch("/api/find-posts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...networkBody,
+              competitors: competitorKeywords,
+            }),
+          }).then((r) => r.json())
+        );
       }
 
-      // ── Step 4: Create go-to-market content ────────────────────────
+      const [investorsResult, teammatesResult, postsResult, competitorPostsResult] = await Promise.allSettled(networkPromises);
+
+      if (investorsResult.status === "fulfilled" && (investorsResult.value as Record<string, unknown>).contacts) {
+        const val = investorsResult.value as { contacts: Contact[] };
+        if (val.contacts.length > 0) {
+          investors = val.contacts;
+          addStepDetail(`Found ${val.contacts.length} potential investors`);
+        }
+      }
+      if (teammatesResult.status === "fulfilled" && (teammatesResult.value as Record<string, unknown>).contacts) {
+        const val = teammatesResult.value as { contacts: Contact[] };
+        if (val.contacts.length > 0) {
+          teammates = val.contacts;
+          addStepDetail(`Found ${val.contacts.length} potential teammates`);
+        }
+      }
+      if (postsResult.status === "fulfilled" && (postsResult.value as Record<string, unknown>).posts) {
+        const val = postsResult.value as { posts: LinkedInPost[] };
+        if (val.posts.length > 0) {
+          linkedInPosts = val.posts;
+          addStepDetail(`Found ${val.posts.length} relevant LinkedIn posts`);
+        }
+      }
+      if (competitorPostsResult?.status === "fulfilled" && (competitorPostsResult.value as Record<string, unknown>).posts) {
+        const val = competitorPostsResult.value as { posts: LinkedInPost[] };
+        if (val.posts.length > 0) {
+          competitorPosts = val.posts;
+          addStepDetail(`Found ${val.posts.length} competitor mention posts`);
+        }
+      }
+
+      // ── Step 4: Create go-to-market content + playbooks ──────────
       setGenStatus("creating_content");
       setStatusMessage("Creating your go-to-market plan...");
 
       let emailDrafts: EmailDraft[] = [];
+      let playbooks: import("@/lib/types").GrowthPlaybook[] | undefined;
+      let seoAudit: import("@/lib/types").SEOAudit | undefined;
 
       try {
-        const res = await fetch("/api/generate-content", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            description: enrichedDescription,
-            appName: productPage?.name || "My App",
-            shareUrl: productPage?.shareUrl || "",
-            audienceGroups: audienceGroups || [],
-            viabilityAnalysis,
-            contacts: allContacts,
-          }),
-        });
-        const result = await res.json();
+        // Run content generation, playbooks, and optionally SEO audit in parallel
+        const gtmPromises: Promise<unknown>[] = [
+          fetch("/api/generate-content", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              description: enrichedDescription,
+              appName: productPage?.name || "My App",
+              shareUrl: productPage?.shareUrl || "",
+              audienceGroups: audienceGroups || [],
+              viabilityAnalysis,
+              contacts: allContacts,
+            }),
+          }).then((r) => r.json()),
+          fetch("/api/generate-playbooks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              description: enrichedDescription,
+              appName: productPage?.name || "My App",
+              industry: targeting?.industries?.[0] || "Technology",
+              competitors: detectedCompetitors,
+              viabilityAnalysis: viabilityAnalysis ? {
+                summary: viabilityAnalysis.summary,
+                topOpportunities: viabilityAnalysis.topOpportunities,
+              } : undefined,
+            }),
+          }).then((r) => r.json()),
+        ];
 
-        if (result.posts && result.posts.length > 0) {
-          posts = result.posts;
-          setStatusMessage(`Created ${result.posts.length} post templates`);
+        const [contentResult, playbooksResult] = await Promise.allSettled(gtmPromises);
+
+        if (contentResult.status === "fulfilled") {
+          const result = contentResult.value as Record<string, unknown>;
+          if (result.posts && (result.posts as PostTemplate[]).length > 0) {
+            posts = result.posts as PostTemplate[];
+            setStatusMessage(`Created ${posts.length} post templates`);
+          }
+          if (result.emailDrafts && (result.emailDrafts as EmailDraft[]).length > 0) {
+            emailDrafts = result.emailDrafts as EmailDraft[];
+          }
         }
-        if (result.emailDrafts && result.emailDrafts.length > 0) {
-          emailDrafts = result.emailDrafts;
+
+        if (playbooksResult.status === "fulfilled") {
+          const result = playbooksResult.value as { playbooks?: import("@/lib/types").GrowthPlaybook[] };
+          if (result.playbooks && result.playbooks.length > 0) {
+            playbooks = result.playbooks;
+            addStepDetail(`Generated ${playbooks.length} growth playbooks`);
+          }
         }
 
         addStepDetail(
@@ -568,6 +641,10 @@ function LoadingContent() {
       if (investors) projectUpdate.investors = investors;
       if (teammates) projectUpdate.teammates = teammates;
       if (linkedInPosts) projectUpdate.linkedInPosts = linkedInPosts;
+      if (competitorPosts) projectUpdate.competitorPosts = competitorPosts;
+      if (detectedCompetitors.length > 0) projectUpdate.detectedCompetitors = detectedCompetitors;
+      if (playbooks) projectUpdate.playbooks = playbooks;
+      if (seoAudit) projectUpdate.seoAudit = seoAudit;
 
       updateProject(pid, projectUpdate as Partial<import("@/lib/types").Project>);
 

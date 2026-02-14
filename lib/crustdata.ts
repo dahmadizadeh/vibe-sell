@@ -94,6 +94,18 @@ export async function searchPeople(
     const data = await res.json();
     const profiles = data.profiles || data.results || data || [];
     console.log("[crustdata] searchPeople returned", profiles.length, "profiles. Response keys:", Object.keys(data));
+    if (profiles.length > 0) {
+      const p = profiles[0];
+      console.log("[crustdata] First profile keys:", Object.keys(p));
+      console.log("[crustdata] First profile photo fields:", {
+        profile_picture_url: p.profile_picture_url,
+        profile_photo_url: p.profile_photo_url,
+        avatar_url: p.avatar_url,
+      });
+      if (p.current_employers?.[0]) {
+        console.log("[crustdata] First employer keys:", Object.keys(p.current_employers[0]));
+      }
+    }
     return profiles;
   } finally {
     clearTimeout(timeout);

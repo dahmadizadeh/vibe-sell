@@ -30,6 +30,10 @@ export interface Project {
   investors?: Contact[];
   teammates?: Contact[];
   linkedInPosts?: LinkedInPost[];
+  competitorPosts?: LinkedInPost[];
+  detectedCompetitors?: string[];
+  seoAudit?: SEOAudit;
+  playbooks?: GrowthPlaybook[];
 }
 
 export interface Targeting {
@@ -206,6 +210,27 @@ export interface ImportedAnalysis {
   features: string[];
   industry: string;
   competitors: string[];
+}
+
+export interface SEOAudit {
+  score: number;
+  checks: Array<{
+    category: 'seo' | 'aeo';
+    item: string;
+    status: 'pass' | 'fail' | 'warning';
+    detail: string;
+  }>;
+  recommendations: string[];
+  toolSuggestions: string[];
+}
+
+export interface GrowthPlaybook {
+  id: string;
+  title: string;
+  icon: string;
+  description: string;
+  steps: string[];
+  relevance: string;
 }
 
 export interface LinkedInPost {
