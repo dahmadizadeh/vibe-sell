@@ -14,11 +14,14 @@ import { EmailComposer } from "@/components/EmailComposer";
 import { useAppStore } from "@/lib/store";
 import { uniqueCompanies } from "@/lib/utils";
 import { PostCard } from "@/components/PostCard";
-import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage, PostTemplate } from "@/lib/types";
+import { ConversationsTab } from "@/components/ConversationsTab";
+import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage, PostTemplate, Conversation } from "@/lib/types";
+import { generateId } from "@/lib/utils";
 
 const BUILDER_TABS = [
   { key: "app" as const, label: "Your App" },
   { key: "people" as const, label: "People to Reach" },
+  { key: "conversations" as const, label: "Conversations" },
   { key: "content" as const, label: "Go-to-Market Content" },
 ];
 
@@ -26,12 +29,12 @@ export default function ProjectPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { getProject, updateProject, setContacts, setTargeting, setProductPage, setPitchPages, updateEmailDraft, markDraftStatus, hydrate } = useAppStore();
+  const { getProject, updateProject, setContacts, setTargeting, setProductPage, setPitchPages, updateEmailDraft, markDraftStatus, addConversation, updatePMFScore, hydrate } = useAppStore();
   const [hydrated, setHydrated] = useState(false);
   const [activeCompany, setActiveCompany] = useState("");
   const [composerContactId, setComposerContactId] = useState<string | null>(null);
   const [activeAudienceGroup, setActiveAudienceGroup] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"app" | "people" | "content">("app");
+  const [activeTab, setActiveTab] = useState<"app" | "people" | "conversations" | "content">("app");
 
   useEffect(() => {
     hydrate();
@@ -124,6 +127,62 @@ export default function ProjectPage() {
     updateProject(project.id, { posts: newPosts });
   }, [project, updateProject]);
 
+  const handleAddConversation = useCallback(async (transcript: string, contactId?: string) => {
+    if (!project) return;
+    const contact = contactId ? project.contacts.find((c) => c.id === contactId) : undefined;
+    const appName = project.productPage?.name || project.title;
+
+    const res = await fetch("/api/analyze-conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript,
+        appName,
+        description: project.description,
+        existingConversations: project.conversations || [],
+      }),
+    });
+    const result = await res.json();
+
+    if (result.analysis) {
+      const conversation: Conversation = {
+        id: generateId(),
+        projectId: project.id,
+        date: new Date().toISOString(),
+        contactId,
+        contactName: contact?.name,
+        source: "notes",
+        transcript,
+        analysis: result.analysis,
+      };
+      addConversation(project.id, conversation);
+
+      if (result.pmfScore) {
+        updatePMFScore(project.id, result.pmfScore);
+      }
+    }
+  }, [project, addConversation, updatePMFScore]);
+
+  const handleReEvaluate = useCallback(async () => {
+    if (!project || !project.conversations || project.conversations.length < 3) return;
+    const appName = project.productPage?.name || project.title;
+
+    const res = await fetch("/api/re-evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversations: project.conversations,
+        appName,
+        description: project.description,
+      }),
+    });
+    const result = await res.json();
+
+    if (result.pmfScore) {
+      updatePMFScore(project.id, result.pmfScore);
+    }
+  }, [project, updatePMFScore]);
+
   if (!hydrated || !project) {
     return (
       <div className="min-h-[calc(100vh-56px)] flex items-center justify-center">
@@ -170,6 +229,11 @@ export default function ProjectPage() {
               {tab.key === "people" && project.contacts.length > 0 && (
                 <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
                   {project.contacts.length}
+                </span>
+              )}
+              {tab.key === "conversations" && project.conversations && project.conversations.length > 0 && (
+                <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                  {project.conversations.length}
                 </span>
               )}
               {tab.key === "content" && project.posts && project.posts.length > 0 && (
@@ -312,7 +376,16 @@ export default function ProjectPage() {
           </Card>
         )}
 
-        {/* Tab 3: Go-to-Market Content */}
+        {/* Tab 3: Conversations */}
+        {activeTab === "conversations" && (
+          <ConversationsTab
+            project={project}
+            onAddConversation={handleAddConversation}
+            onReEvaluate={handleReEvaluate}
+          />
+        )}
+
+        {/* Tab 4: Go-to-Market Content */}
         {activeTab === "content" && (
           <div>
             {/* Posts */}

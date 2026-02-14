@@ -291,6 +291,7 @@ export default function LandingPage() {
                 <div className="flex gap-1 mb-5 border-b border-slate-700/30">
                   <div className="px-3 py-2 text-xs font-medium text-[#2E75B6] border-b-2 border-[#2E75B6]">Your App</div>
                   <div className="px-3 py-2 text-xs font-medium text-slate-500">People to Reach</div>
+                  <div className="px-3 py-2 text-xs font-medium text-slate-500">Conversations</div>
                   <div className="px-3 py-2 text-xs font-medium text-slate-500">Go-to-Market</div>
                 </div>
 
@@ -500,7 +501,7 @@ export default function LandingPage() {
             <p className="text-center text-slate-500 mb-12">From one sentence. In under 5 minutes.</p>
           </Section>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {/* Card 1: Working App */}
             <Section delay={0}>
               <div className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all h-full">
@@ -598,6 +599,35 @@ export default function LandingPage() {
                 </div>
                 <h3 className="font-semibold text-slate-900 mb-1">Launch Plan</h3>
                 <p className="text-sm text-slate-500">Personalized per audience group</p>
+              </div>
+            </Section>
+
+            {/* Card 5: Conversation Loop */}
+            <Section delay={400}>
+              <div className="bg-white rounded-xl border border-slate-200 p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all h-full">
+                <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 mb-4">
+                  <div className="text-xs text-slate-400 mb-2 font-medium">PMF Score</div>
+                  <div className="text-3xl font-bold text-slate-900 mb-2">68<span className="text-base text-slate-500">/100</span></div>
+                  <div className="space-y-1.5">
+                    {[
+                      { label: "Problem", score: 82, color: "#22c55e" },
+                      { label: "Solution", score: 71, color: "#22c55e" },
+                      { label: "Pay", score: 52, color: "#eab308" },
+                      { label: "Referral", score: 60, color: "#eab308" },
+                    ].map((d) => (
+                      <div key={d.label} className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 w-12">{d.label}</span>
+                        <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${d.score}%`, backgroundColor: d.color }} />
+                        </div>
+                        <span className="text-[10px] text-slate-400 w-5 text-right">{d.score}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-emerald-600 font-medium mt-2">Based on 5 conversations</p>
+                </div>
+                <h3 className="font-semibold text-slate-900 mb-1">Conversation Loop</h3>
+                <p className="text-sm text-slate-500">Track PMF across real conversations</p>
               </div>
             </Section>
           </div>
@@ -733,7 +763,7 @@ export default function LandingPage() {
                 <div className="w-10 h-10 rounded-full bg-[#2E75B6] text-white flex items-center justify-center text-sm font-bold mx-auto mb-4 relative z-10">3</div>
                 <h3 className="font-semibold text-slate-900 mb-2">Reach out</h3>
                 <p className="text-sm text-slate-500 mb-5">
-                  Get real people who need it &mdash; with emails ready to send.
+                  Get real people who need it &mdash; with emails ready to send. Then log your conversations and track PMF.
                 </p>
                 {/* Mini results mockup */}
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 mx-auto max-w-[220px]">

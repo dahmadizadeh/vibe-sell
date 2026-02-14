@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeBusinessViability, generateSmartTargeting } from "@/lib/ai-analyze";
+import { generateSuggestedQuestions } from "@/lib/ai-conversations";
 
 export const maxDuration = 60;
 
@@ -12,15 +13,17 @@ export async function POST(req: NextRequest) {
   const results: {
     viabilityAnalysis?: ReturnType<typeof analyzeBusinessViability> extends Promise<infer T> ? T : never;
     smartTargeting?: ReturnType<typeof generateSmartTargeting> extends Promise<infer T> ? T : never;
+    suggestedQuestions?: string[];
     _errors?: string[];
   } = {};
 
   const errors: string[] = [];
 
-  // Run viability analysis and smart targeting in parallel
-  const [viabilityResult, targetingResult] = await Promise.allSettled([
+  // Run viability analysis, smart targeting, and suggested questions in parallel
+  const [viabilityResult, targetingResult, questionsResult] = await Promise.allSettled([
     analyzeBusinessViability(description, appName),
     generateSmartTargeting(description, appName),
+    generateSuggestedQuestions(appName, description),
   ]);
 
   if (viabilityResult.status === "fulfilled") {
@@ -37,6 +40,14 @@ export async function POST(req: NextRequest) {
   } else {
     console.error("[analyze-viability] Smart targeting failed:", targetingResult.reason);
     errors.push(`targeting: ${targetingResult.reason?.message || String(targetingResult.reason)}`);
+  }
+
+  if (questionsResult.status === "fulfilled") {
+    results.suggestedQuestions = questionsResult.value;
+    console.log("[analyze-viability] Generated", questionsResult.value.length, "suggested questions");
+  } else {
+    console.error("[analyze-viability] Suggested questions failed:", questionsResult.reason);
+    errors.push(`questions: ${questionsResult.reason?.message || String(questionsResult.reason)}`);
   }
 
   if (errors.length > 0) {

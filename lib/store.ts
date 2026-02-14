@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Project, Contact, EmailDraft, Targeting, ProductPage, PitchPage, ProjectMode, UserProfile } from "./types";
+import type { Project, Contact, EmailDraft, Targeting, ProductPage, PitchPage, ProjectMode, UserProfile, Conversation, PMFScore } from "./types";
 import { loadAllProjects, saveProject } from "./project-store";
 import { generateId } from "./utils";
 
@@ -33,6 +33,8 @@ interface AppState {
   setPitchPages: (id: string, pages: PitchPage[]) => void;
   updateEmailDraft: (projectId: string, contactId: string, draft: Partial<EmailDraft>) => void;
   markDraftStatus: (projectId: string, contactId: string, status: 'drafted' | 'sent') => void;
+  addConversation: (projectId: string, conversation: Conversation) => void;
+  updatePMFScore: (projectId: string, pmfScore: PMFScore) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -156,5 +158,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       d.contactId === contactId ? { ...d, status } : d
     );
     get().updateProject(projectId, { emailDrafts: drafts });
+  },
+
+  addConversation: (projectId, conversation) => {
+    const project = get().getProject(projectId);
+    if (!project) return;
+    const conversations = [...(project.conversations || []), conversation];
+    get().updateProject(projectId, { conversations });
+  },
+
+  updatePMFScore: (projectId, pmfScore) => {
+    get().updateProject(projectId, { pmfScore });
   },
 }));

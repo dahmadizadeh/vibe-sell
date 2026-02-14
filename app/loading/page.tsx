@@ -150,6 +150,7 @@ function LoadingContent() {
       let viabilityAnalysis: ViabilityAnalysis | undefined;
       let audienceGroups: AudienceGroup[] | undefined;
       let posts: PostTemplate[] | undefined;
+      let suggestedQuestions: string[] | undefined;
 
       // ── Step 1: Build the app ──────────────────────────────────────
       setGenStatus("generating");
@@ -211,6 +212,10 @@ function LoadingContent() {
           addStepDetail(
             `Score: ${result.viabilityAnalysis.overallScore}/100 (${result.viabilityAnalysis.verdict}) \u2014 ${result.viabilityAnalysis.summary.slice(0, 80)}...`
           );
+        }
+
+        if (result.suggestedQuestions) {
+          suggestedQuestions = result.suggestedQuestions;
         }
 
         if (result.smartTargeting) {
@@ -364,6 +369,7 @@ function LoadingContent() {
         viabilityAnalysis,
         audienceGroups,
         posts,
+        suggestedQuestions,
         stats: {
           contactsFound: allContacts.length,
           emailsSent: 0,

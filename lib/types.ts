@@ -21,6 +21,9 @@ export interface Project {
   viabilityAnalysis?: ViabilityAnalysis;
   audienceGroups?: AudienceGroup[];
   posts?: PostTemplate[];
+  conversations?: Conversation[];
+  suggestedQuestions?: string[];
+  pmfScore?: PMFScore;
 }
 
 export interface Targeting {
@@ -140,6 +143,42 @@ export interface PostTemplate {
   bestTimeToPost: string;
   expectedReach: string;
   communityName?: string | null;
+}
+
+export interface ConversationAnalysis {
+  keyInsights: Array<{ signal: 'positive' | 'neutral' | 'negative' | 'idea'; text: string }>;
+  overallSentiment: 'strong_positive' | 'positive' | 'neutral' | 'negative' | 'strong_negative';
+  willingnessToPay: string;
+  currentSolution: string;
+  switchingTrigger: string;
+  featureRequests: string[];
+  bestQuote: string;
+}
+
+export interface Conversation {
+  id: string;
+  projectId: string;
+  date: string;
+  contactId?: string;
+  contactName?: string;
+  source: 'audio' | 'notes' | 'live';
+  transcript: string;
+  duration?: number;
+  analysis: ConversationAnalysis;
+}
+
+export interface PMFScore {
+  overall: number;
+  dimensions: {
+    problemValidation: number;
+    solutionInterest: number;
+    willingnessToPay: number;
+    referralPotential: number;
+  };
+  conversationCount: number;
+  summary: string;
+  biggestRisk: string;
+  suggestedAction: string;
 }
 
 export interface UserProfile {
