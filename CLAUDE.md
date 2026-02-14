@@ -36,6 +36,16 @@ No one else does both. Lovable builds but doesn't find customers. Apollo finds c
    - Returns: full profile + verified business email
    - Cost: 3 credits + 2 for email enrichment
 
+## Validation
+```bash
+curl -s -X POST "$CRUSTDATA_BASE_URL/screener/persondb/search" \
+  -H "Authorization: Token $CRUSTDATA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"filters":{"column":"current_employers.title","type":"(.)","value":"founder"},"limit":1}' \
+  | jq '.profiles | length'
+# Should return 1. If 0, the filters are wrong.
+```
+
 ## Environment Variables
 - CRUSTDATA_API_KEY
 - ANTHROPIC_API_KEY
