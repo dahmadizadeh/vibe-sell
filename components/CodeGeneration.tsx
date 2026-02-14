@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import { Loader2, Sparkles, Users, Check } from "lucide-react";
 import { AppPreview } from "./AppPreview";
 
@@ -13,6 +13,42 @@ interface CodeGenerationProps {
   reactCode?: string;
 }
 
+/**
+ * Try to extract the reactCode value from the partial JSON stream.
+ * Returns the code if we can find it, otherwise returns null.
+ */
+function extractCodeFromStream(raw: string): string | null {
+  // Look for "reactCode": " in the stream
+  const marker = '"reactCode"';
+  const idx = raw.indexOf(marker);
+  if (idx === -1) return null;
+
+  // Find the opening quote of the value
+  const afterMarker = raw.substring(idx + marker.length);
+  const colonIdx = afterMarker.indexOf('"');
+  if (colonIdx === -1) return null;
+
+  // Extract the string value (handling escaped characters)
+  const valueStart = idx + marker.length + colonIdx + 1;
+  let code = "";
+  let i = valueStart;
+  while (i < raw.length) {
+    const ch = raw[i];
+    if (ch === '"' && raw[i - 1] !== "\\") break; // End of string
+    if (ch === "\\" && i + 1 < raw.length) {
+      const next = raw[i + 1];
+      if (next === "n") { code += "\n"; i += 2; continue; }
+      if (next === "t") { code += "\t"; i += 2; continue; }
+      if (next === '"') { code += '"'; i += 2; continue; }
+      if (next === "\\") { code += "\\"; i += 2; continue; }
+    }
+    code += ch;
+    i++;
+  }
+
+  return code.length > 10 ? code : null;
+}
+
 export function CodeGeneration({
   streamedCode,
   status,
@@ -23,14 +59,29 @@ export function CodeGeneration({
 }: CodeGenerationProps) {
   const codeRef = useRef<HTMLPreElement>(null);
 
+  // Show formatted code once available, otherwise try to extract from stream
+  const displayCode = useMemo(() => {
+    if (reactCode) return reactCode;
+    const extracted = extractCodeFromStream(streamedCode);
+    if (extracted) return extracted;
+    // During early streaming, show a placeholder
+    if (streamedCode.length < 50) return "// Generating your app...\n";
+    // Show extracted code or indicate we're still parsing
+    return "// Building app components...\n// " + (appName || "Please wait") + "\n";
+  }, [reactCode, streamedCode, appName]);
+
   // Auto-scroll code to bottom
   useEffect(() => {
     if (codeRef.current) {
       codeRef.current.scrollTop = codeRef.current.scrollHeight;
     }
-  }, [streamedCode]);
+  }, [displayCode]);
 
   const showPreview = status === "app_ready" || status === "targeting" || status === "finding_customers" || status === "complete";
+  const isStreaming = status === "generating" && !reactCode;
+
+  // Streaming character count for visual feedback
+  const charCount = streamedCode.length;
 
   return (
     <div className="w-full max-w-5xl mx-auto">
@@ -46,11 +97,18 @@ export function CodeGeneration({
           )}
           <span className="text-sm font-medium text-gray-700">{statusMessage}</span>
         </div>
-        {appName && (
-          <span className="ml-auto text-sm text-gray-400">
-            {appName}{appTagline ? ` — ${appTagline}` : ""}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-3">
+          {isStreaming && (
+            <span className="text-xs text-gray-400 font-mono">
+              {charCount > 0 ? `${Math.round(charCount / 10) * 10} chars` : ""}
+            </span>
+          )}
+          {appName && (
+            <span className="text-sm text-gray-400">
+              {appName}{appTagline ? ` — ${appTagline}` : ""}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Progress steps */}
@@ -89,11 +147,11 @@ export function CodeGeneration({
           </div>
           <pre
             ref={codeRef}
-            className="p-4 text-[13px] leading-relaxed font-mono text-[#cdd6f4] overflow-auto flex-1"
+            className="p-4 text-[13px] leading-relaxed font-mono text-[#cdd6f4] overflow-auto flex-1 whitespace-pre-wrap"
             style={{ maxHeight: showPreview ? "400px" : "500px", minHeight: "300px" }}
           >
-            <code>{streamedCode || "// Generating your app...\n"}</code>
-            {status === "generating" && (
+            <code>{displayCode}</code>
+            {isStreaming && (
               <span className="inline-block w-2 h-4 bg-[#cdd6f4] animate-pulse ml-0.5" />
             )}
           </pre>
@@ -107,7 +165,7 @@ export function CodeGeneration({
               <span className="text-xs text-gray-500 font-medium">Live Preview</span>
             </div>
             <div className="flex-1" style={{ minHeight: "300px" }}>
-              <AppPreview code={reactCode} height={showPreview ? "400px" : "300px"} />
+              <AppPreview code={reactCode} height="400px" />
             </div>
           </div>
         )}

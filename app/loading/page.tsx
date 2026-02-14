@@ -157,11 +157,23 @@ function LoadingContent() {
             setReactCode(app.reactCode);
             setGenStatus("app_ready");
             setStatusMessage("App built! Finding your customers...");
+            // Save productPage immediately so it persists even if stream drops
+            productPage = {
+              name: app.name,
+              tagline: app.tagline,
+              features: app.features,
+              shareUrl: `/p/${app.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").substring(0, 40)}`,
+              reactCode: app.reactCode,
+            };
+            gotRealData = true;
           },
           onComplete: (data) => {
             if (data.targeting) targeting = data.targeting;
-            if (data.productPage) productPage = data.productPage;
-            if (data.productPage?.reactCode) gotRealData = true;
+            // Only override productPage from complete if it has reactCode
+            // (otherwise keep the one from app_ready)
+            if (data.productPage?.reactCode) {
+              productPage = data.productPage;
+            }
           },
           onError: () => {
             // Will fall through to mock data
