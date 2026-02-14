@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchPeople, mapPersonToContact, normalizeCompanyName } from "@/lib/crustdata";
-import { getSellerMockData } from "@/lib/mock-data";
 import type { Contact, RoleTag } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   const { company, titles } = (await req.json()) as { company: string; titles?: string[] };
 
   try {
-    const conditions = [
+    const conditions: Array<
+      | { column: string; type: string; value: string | string[] | number }
+      | { op: string; conditions: Array<{ column: string; type: string; value: string }> }
+    > = [
       {
         column: "current_employers.company_website_domain",
         type: "(.)",
@@ -20,15 +22,31 @@ export async function POST(req: NextRequest) {
       },
     ];
 
+    // Use nested OR blocks for multiple titles (not OR-joined strings)
     if (titles && titles.length > 0) {
-      conditions.push({
-        column: "current_employers.title",
-        type: "(.)",
-        value: titles.join(" OR "),
-      });
+      if (titles.length === 1) {
+        conditions.push({
+          column: "current_employers.title",
+          type: "(.)",
+          value: titles[0],
+        });
+      } else {
+        conditions.push({
+          op: "or",
+          conditions: titles.map((title) => ({
+            column: "current_employers.title",
+            type: "(.)" as const,
+            value: title,
+          })),
+        });
+      }
     }
 
-    const people = await searchPeople(conditions, 25);
+    console.log("[find-contacts] Searching for:", company, "conditions:", JSON.stringify(conditions, null, 2));
+
+    const people = await searchPeople(conditions as Parameters<typeof searchPeople>[0], 25);
+    console.log("[find-contacts] Crustdata returned", people.length, "people");
+
     const allContacts = people
       .map((p, i) => mapPersonToContact(p, i))
       .filter((c): c is Contact => c !== null);
@@ -57,8 +75,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ contacts, dataSource: "live" });
   } catch (error) {
-    console.error("Crustdata find-contacts error:", error);
-    const mockData = getSellerMockData(company);
-    return NextResponse.json({ contacts: mockData.contacts, dataSource: "mock" });
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error("[find-contacts] Crustdata error:", err.message);
+    console.error("[find-contacts] Stack:", err.stack);
+    return NextResponse.json({ contacts: [], dataSource: "error", _error: err.message }, { status: 200 });
   }
 }

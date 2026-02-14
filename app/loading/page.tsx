@@ -6,7 +6,6 @@ import { Suspense } from "react";
 import { LoadingSteps } from "@/components/LoadingSteps";
 import { CodeGeneration } from "@/components/CodeGeneration";
 import { useAppStore } from "@/lib/store";
-import { getSellerMockData } from "@/lib/mock-data";
 import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup, PostTemplate, ImportedAnalysis, LinkedInPost } from "@/lib/types";
 import { generateSlug } from "@/lib/utils";
 
@@ -407,7 +406,10 @@ function LoadingContent() {
                 if (result.dataSource === "live") dataSource = "live";
                 setCachedContacts(cacheKey, contacts!);
               }
-            } catch {}
+            } catch (err) {
+              console.error(`[loading] Search for "${group.name}" failed:`, err);
+              addStepDetail(`Search for ${group.name} failed \u2014 ${err instanceof Error ? err.message : "unknown error"}`);
+            }
           } else {
             dataSource = "live";
             contacts = contacts.slice(0, group.count);
@@ -446,7 +448,10 @@ function LoadingContent() {
               dataSource = result.dataSource || "live";
               setCachedContacts(cacheKey, contacts!);
             }
-          } catch {}
+          } catch (err) {
+            console.error("[loading] Flat targeting search failed:", err);
+            addStepDetail(`Contact search failed \u2014 ${err instanceof Error ? err.message : "unknown error"}`);
+          }
         } else {
           dataSource = "live";
         }
@@ -583,9 +588,8 @@ function LoadingContent() {
       let anyLiveData = false;
 
       for (const company of companies) {
-        const mockData = getSellerMockData(company);
-
-        let pitchPage = mockData.pitchPage;
+        // Generate pitch page via Claude (no mock data)
+        let pitchPage: PitchPage | null = null;
         try {
           const pitchRes = await fetch("/api/generate-pitch-page", {
             method: "POST",
@@ -594,8 +598,25 @@ function LoadingContent() {
           });
           const pitchResult = await pitchRes.json();
           if (pitchResult.pitchPage) pitchPage = pitchResult.pitchPage;
-        } catch {}
+        } catch (err) {
+          console.error(`[loading] Pitch page generation failed for ${company}:`, err);
+        }
 
+        // Minimal fallback if API fails entirely
+        if (!pitchPage) {
+          pitchPage = {
+            targetCompany: company,
+            headline: `Built for ${company}`,
+            subtitle: description,
+            problemPoints: [],
+            solutionMockups: [],
+            urgencySignals: [],
+            ctaText: "Book a Demo",
+            shareUrl: `/d/${company.toLowerCase().replace(/\s+/g, "-")}`,
+          };
+        }
+
+        // Search for real contacts at this company
         const cacheKey = `crustdata_contacts_${company.toLowerCase().replace(/\s+/g, "_")}`;
         let contacts: Contact[] | null = getCachedContacts(cacheKey);
 
@@ -614,32 +635,44 @@ function LoadingContent() {
               if (contactsResult.dataSource === "live") anyLiveData = true;
               setCachedContacts(cacheKey, contacts!);
             }
-          } catch {}
+          } catch (err) {
+            console.error(`[loading] Contact search failed for ${company}:`, err);
+          }
         }
 
-        if (!contacts || contacts.length === 0) contacts = mockData.contacts;
-
         allPitchPages.push(pitchPage);
-        allContacts.push(...contacts);
-        allDrafts.push(...mockData.emailDrafts);
+        if (contacts && contacts.length > 0) {
+          allContacts.push(...contacts);
+        }
       }
 
-      await fetch("/api/generate-emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "seller",
-          context: { description, shareUrl: allPitchPages[0]?.shareUrl || "" },
-          contacts: allContacts.slice(0, 3),
-        }),
-      }).catch(() => {});
+      // Generate email drafts via API for found contacts
+      if (allContacts.length > 0) {
+        try {
+          const emailRes = await fetch("/api/generate-emails", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mode: "seller",
+              context: { description, shareUrl: allPitchPages[0]?.shareUrl || "" },
+              contacts: allContacts.slice(0, 5),
+            }),
+          });
+          const emailResult = await emailRes.json();
+          if (emailResult.drafts && emailResult.drafts.length > 0) {
+            allDrafts.push(...emailResult.drafts);
+          }
+        } catch (err) {
+          console.error("[loading] Email generation failed:", err);
+        }
+      }
 
       updateProject(pid, {
         contacts: allContacts,
         emailDrafts: allDrafts,
         pitchPages: allPitchPages,
         targetCompanies: allPitchPages.map((pp) => pp.targetCompany),
-        dataSource: anyLiveData ? "live" : "mock",
+        dataSource: anyLiveData ? "live" : "error",
         stats: {
           contactsFound: allContacts.length,
           emailsSent: 0,

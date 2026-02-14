@@ -576,9 +576,9 @@ export default function ProjectPage() {
                 </p>
 
                 {/* Data source indicator */}
-                {project.dataSource === "mock" && (
-                  <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-2 rounded-lg text-sm mb-4">
-                    Showing sample contacts &mdash; Crustdata API connection issue
+                {project.dataSource === "error" && (
+                  <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-sm mb-4">
+                    Crustdata API error &mdash; some contacts may be missing. Try creating a new project to retry.
                   </div>
                 )}
                 {project.dataSource === "live" && (

@@ -17,7 +17,7 @@ export interface Project {
   productPage?: ProductPage;
   pitchPages?: PitchPage[];
   targetCompanies?: string[];
-  dataSource?: 'live' | 'mock';
+  dataSource?: 'live' | 'mock' | 'error';
   viabilityAnalysis?: ViabilityAnalysis;
   audienceGroups?: AudienceGroup[];
   posts?: PostTemplate[];
