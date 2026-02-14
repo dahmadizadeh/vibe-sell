@@ -71,18 +71,27 @@ function LoadingContent() {
       const startTime = Date.now();
 
       if (project.mode === "builder") {
-        // Step 1: Analyze idea — still mock for v1
+        // Step 1: Analyze idea — call real Claude API
         const scenario = detectBuilderScenario(project.description);
         const mockData = getBuilderMockData(scenario);
 
-        await fetch("/api/analyze-idea", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: project.description }),
-        }).catch(() => {});
+        let targeting = mockData.targeting;
+        let productPage = mockData.productPage;
 
-        const targeting = mockData.targeting;
-        const productPage = mockData.productPage;
+        try {
+          const analyzeRes = await fetch("/api/analyze-idea", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ description: project.description }),
+          });
+          const analyzeResult = await analyzeRes.json();
+          if (analyzeResult.targeting) {
+            targeting = analyzeResult.targeting;
+          }
+          if (analyzeResult.productPage) {
+            productPage = analyzeResult.productPage;
+          }
+        } catch {}
 
         // Step 2: Find customers — try real API with cache
         const cacheKey = `crustdata_contacts_builder_${hashString(JSON.stringify(targeting))}`;

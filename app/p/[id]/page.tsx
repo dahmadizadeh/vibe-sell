@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { AppPreview } from "@/components/AppPreview";
 import { COPY } from "@/lib/copy";
 import { loadAllProjects } from "@/lib/project-store";
 import type { Project } from "@/lib/types";
@@ -40,6 +41,25 @@ export default function PublicProductPage() {
 
   const page = project.productPage;
 
+  // If we have generated React code, render the live app full-screen
+  if (page.reactCode) {
+    return (
+      <div className="min-h-screen bg-white">
+        {/* Minimal header */}
+        <div className="border-b border-gray-100 px-4 py-3 flex items-center justify-between">
+          <div>
+            <span className="font-semibold text-gray-900">{page.name}</span>
+            <span className="text-gray-400 text-sm ml-2">{page.tagline}</span>
+          </div>
+          <span className="text-xs text-gray-400">{COPY.shareableFooter}</span>
+        </div>
+        {/* Full-screen app preview */}
+        <AppPreview code={page.reactCode} height="calc(100vh - 53px)" />
+      </div>
+    );
+  }
+
+  // Fallback: static product page for projects without generated code
   return (
     <div className="min-h-screen bg-white">
       {/* Hero */}

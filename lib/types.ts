@@ -49,6 +49,7 @@ export interface ProductPage {
   tagline: string;
   features: string[];
   shareUrl: string;
+  reactCode?: string;
 }
 
 export interface PitchPage {

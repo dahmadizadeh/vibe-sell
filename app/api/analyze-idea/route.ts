@@ -1,28 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
+import { generateApp, generateTargeting, slugify } from "@/lib/ai";
 import { detectBuilderScenario, getBuilderMockData } from "@/lib/mock-data";
+
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const { description } = (await req.json()) as { description: string };
 
-  // TODO: Replace with real Claude API call
-  // const response = await anthropic.messages.create({
-  //   model: "claude-sonnet-4-20250514",
-  //   max_tokens: 1024,
-  //   messages: [{
-  //     role: "user",
-  //     content: `Analyze this product description and generate:
-  //       1. A targeting profile (industries, company sizes, buyer titles, regions)
-  //       2. A product page (name, tagline, 3 features)
-  //       Description: "${description}"
-  //       Return JSON: { targeting: Targeting, productPage: ProductPage }`
-  //   }]
-  // });
+  try {
+    // Step 1: Generate the actual app
+    const app = await generateApp(description);
 
-  const scenario = detectBuilderScenario(description);
-  const data = getBuilderMockData(scenario);
+    // Step 2: Generate targeting based on the real app name
+    const targeting = await generateTargeting(description, app.name);
 
-  return NextResponse.json({
-    targeting: data.targeting,
-    productPage: data.productPage,
-  });
+    return NextResponse.json({
+      targeting,
+      productPage: {
+        name: app.name,
+        tagline: app.tagline,
+        features: app.features,
+        shareUrl: `/p/${slugify(app.name)}`,
+        reactCode: app.reactCode,
+      },
+    });
+  } catch (error) {
+    console.error("AI generation failed:", error);
+    // Fall back to mock data
+    const scenario = detectBuilderScenario(description);
+    const data = getBuilderMockData(scenario);
+    return NextResponse.json({
+      targeting: data.targeting,
+      productPage: data.productPage,
+    });
+  }
 }

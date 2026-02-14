@@ -6,6 +6,7 @@ import { Card } from "@/components/Card";
 import { ContactList } from "@/components/ContactList";
 import { TargetingEditor } from "@/components/TargetingEditor";
 import { ProductPagePreview } from "@/components/ProductPagePreview";
+import { AppPreview } from "@/components/AppPreview";
 import { PitchPagePreview } from "@/components/PitchPagePreview";
 import { CompanyTabs } from "@/components/CompanyTabs";
 import { EmailComposer } from "@/components/EmailComposer";
@@ -166,11 +167,40 @@ export default function ProjectPage() {
         {/* RIGHT CARD */}
         {isBuilder ? (
           <Card className="p-6">
-            {project.productPage && (
-              <ProductPagePreview
-                page={project.productPage}
-                onUpdate={handleProductPageUpdate}
-              />
+            {project.productPage?.reactCode ? (
+              <div>
+                <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                  {project.productPage.name}
+                </h3>
+                <p className="text-gray-500 text-sm mb-4">
+                  {project.productPage.tagline}
+                </p>
+                <AppPreview code={project.productPage.reactCode} height="500px" />
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => window.open(project.productPage!.shareUrl, "_blank")}
+                    className="px-3 py-1.5 text-sm font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
+                  >
+                    Open Page
+                  </button>
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}${project.productPage!.shareUrl}`;
+                      navigator.clipboard.writeText(url);
+                    }}
+                    className="px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Copy Link
+                  </button>
+                </div>
+              </div>
+            ) : (
+              project.productPage && (
+                <ProductPagePreview
+                  page={project.productPage}
+                  onUpdate={handleProductPageUpdate}
+                />
+              )
             )}
           </Card>
         ) : (
