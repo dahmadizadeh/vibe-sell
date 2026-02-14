@@ -4,8 +4,10 @@ import type {
   Contact,
   EmailDraft,
   PostTemplate,
+  ProjectGoal,
   ViabilityAnalysis,
 } from "./types";
+import { getGoalContext } from "./ai-analyze";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -15,10 +17,12 @@ export async function generatePosts(
   description: string,
   appName: string,
   audienceGroups: AudienceGroup[],
-  viability: ViabilityAnalysis | undefined
+  viability: ViabilityAnalysis | undefined,
+  projectGoal?: ProjectGoal
 ): Promise<PostTemplate[]> {
   const groupNames = audienceGroups.map((g) => g.name).join(", ");
   const viabilitySummary = viability?.summary || "Early-stage product.";
+  const goalContext = getGoalContext(projectGoal);
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
@@ -28,7 +32,7 @@ export async function generatePosts(
         role: "user",
         content: `You are a startup founder who's great at social media. Generate 4 post templates for launching this product:
 
-Product: "${appName}" — ${description}
+Product: "${appName}" — ${description}${goalContext}
 Key insight from analysis: ${viabilitySummary}
 Target audience groups: ${groupNames}
 
@@ -111,7 +115,8 @@ export async function generateContextualEmails(
   audienceGroups: AudienceGroup[],
   appName: string,
   description: string,
-  shareUrl: string
+  shareUrl: string,
+  projectGoal?: ProjectGoal
 ): Promise<EmailDraft[]> {
   // Build contact-to-group mapping
   const contactGroupMap: Record<string, string> = {};
@@ -140,7 +145,7 @@ export async function generateContextualEmails(
         role: "user",
         content: `You are helping a founder write personalized cold emails for their product.
 
-Product: "${appName}" — ${description}
+Product: "${appName}" — ${description}${getGoalContext(projectGoal)}
 Demo link: ${shareUrl}
 
 Write a personalized email for each of these contacts. The tone depends on their group:

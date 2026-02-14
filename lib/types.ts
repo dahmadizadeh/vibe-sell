@@ -1,4 +1,5 @@
 export type ProjectMode = 'builder' | 'seller';
+export type ProjectGoal = 'side_project' | 'small_business' | 'venture_scale';
 
 export type RoleTag = 'decision_maker' | 'champion' | 'technical_evaluator';
 export type MockupType = 'dashboard' | 'table' | 'kanban' | 'alerts';
@@ -34,6 +35,9 @@ export interface Project {
   detectedCompetitors?: string[];
   seoAudit?: SEOAudit;
   playbooks?: GrowthPlaybook[];
+  projectGoal?: ProjectGoal;
+  founders?: FounderProfile[];
+  growthIntelligence?: GrowthIntelligence;
 }
 
 export interface Targeting {
@@ -247,4 +251,41 @@ export interface LinkedInPost {
   whyRelevant: string;
   commentStrategy: string;
   suggestedComment: string;
+  relevanceScore?: number;
+}
+
+export interface CompanyAccount {
+  name: string;
+  industry?: string;
+  headcount?: number;
+  contactCount: number;
+  contacts: Contact[];
+  linkedinLogoUrl?: string;
+  website?: string;
+  hq?: string;
+  totalFunding?: number;
+  headcountGrowth?: number;
+}
+
+export interface FounderProfile {
+  id: string;
+  linkedinUrl: string;
+  name: string;
+  firstName: string;
+  headline?: string;
+  profilePhotoUrl?: string;
+  company?: string;
+  pastCompanies?: string[];
+  education?: string[];
+  skills?: string[];
+  connectionCount?: number;
+  recentPosts?: { content: string; reactions: number; comments: number }[];
+}
+
+export interface GrowthIntelligence {
+  networkLeverage: string;
+  contentAuthority: string;
+  warmIntroPaths: string;
+  credibilitySignals: string;
+  channelFit: string[];
 }

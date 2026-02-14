@@ -1,5 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Targeting, ViabilityAnalysis, AudienceGroup } from "./types";
+import type { Targeting, ViabilityAnalysis, AudienceGroup, ProjectGoal } from "./types";
+
+export function getGoalContext(projectGoal?: ProjectGoal): string {
+  if (!projectGoal) return "";
+  const contexts: Record<ProjectGoal, string> = {
+    side_project: "\n\nIMPORTANT CONTEXT: This is a side project. Focus on validation, early adopters, community channels, and low-cost experiments.",
+    small_business: "\n\nIMPORTANT CONTEXT: This is a small business aiming for profitability. Focus on paying customers, unit economics, sustainable channels, and practical monetization.",
+    venture_scale: "\n\nIMPORTANT CONTEXT: This is a venture-scale startup. Focus on TAM, design partners, enterprise buyers, investors, rapid growth, and network effects.",
+  };
+  return contexts[projectGoal];
+}
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -7,8 +17,10 @@ const client = new Anthropic({
 
 export async function analyzeBusinessViability(
   description: string,
-  appName: string
+  appName: string,
+  projectGoal?: ProjectGoal
 ): Promise<ViabilityAnalysis> {
+  const goalContext = getGoalContext(projectGoal);
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 2048,
@@ -18,7 +30,7 @@ export async function analyzeBusinessViability(
         content: `You are a YC partner evaluating a startup idea. Be honest and specific — not generic cheerleading.
 
 The idea: "${description}"
-App name: "${appName}"
+App name: "${appName}"${goalContext}
 
 Analyze this across 5 dimensions (score each 1-100):
 
@@ -68,11 +80,13 @@ No markdown. No explanation. Just JSON.`,
 
 export async function generateSmartTargeting(
   description: string,
-  appName: string
+  appName: string,
+  projectGoal?: ProjectGoal
 ): Promise<{
   targeting: Targeting;
   audienceGroups: AudienceGroup[];
 }> {
+  const goalContext = getGoalContext(projectGoal);
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 3000,
@@ -81,7 +95,7 @@ export async function generateSmartTargeting(
         role: "user",
         content: `You are generating search filters to find real people for a startup using the Crustdata person database.
 
-The product: "${appName}" — ${description}
+The product: "${appName}" — ${description}${goalContext}
 
 Generate 3-4 audience groups of people who would be potential USERS, CUSTOMERS, or VALUABLE CONTACTS for this product.
 

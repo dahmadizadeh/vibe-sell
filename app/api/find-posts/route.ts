@@ -48,20 +48,79 @@ Return ONLY a JSON array of strings. No markdown fences. No explanation. Just th
     }
 
     // Step 2: Search LinkedIn posts via Crustdata
-    const rawPosts = await searchLinkedInPosts(keywords, 20);
-    console.log("[find-posts] Found", rawPosts.length, "posts");
+    const rawPosts = await searchLinkedInPosts(keywords, 30);
+    console.log("[find-posts] Found", rawPosts.length, "raw posts");
 
     if (rawPosts.length === 0) {
       return NextResponse.json({ posts: [] });
     }
 
-    // Step 3: Use Claude to analyze posts and generate engagement strategies
-    const postsForAnalysis = rawPosts.slice(0, 15).map((p, i) => ({
+    // Step 2.5: Score posts for relevance and filter out noise
+    const postsToScore = rawPosts.slice(0, 25).map((p, i) => ({
       idx: i,
+      content: p.content.slice(0, 300),
       author: p.authorName,
       title: p.authorTitle,
-      company: p.authorCompany,
-      content: p.content.slice(0, 500),
+    }));
+
+    const scoredIndices: Map<number, number> = new Map();
+    try {
+      const scoreRes = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 512,
+        messages: [
+          {
+            role: "user",
+            content: `Score these LinkedIn posts for relevance to "${appName}" (${description.slice(0, 200)}).
+${competitors?.length ? `Competitors: ${competitors.join(", ")}` : ""}
+
+Score each 1-10:
+1-3: Wrong language, spam, job posts, completely unrelated
+4-5: Tangentially related
+6-7: Related to the industry/problem space
+8-10: Directly discusses the problem or competitors
+
+Posts:
+${JSON.stringify(postsToScore, null, 2)}
+
+Return ONLY a JSON array of {idx, score}. No markdown. No explanation.`,
+          },
+        ],
+      });
+      const scoreText = scoreRes.content[0].type === "text" ? scoreRes.content[0].text : "[]";
+      const scores: Array<{ idx: number; score: number }> = JSON.parse(
+        scoreText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
+      );
+      for (const s of scores) {
+        scoredIndices.set(s.idx, s.score);
+      }
+      console.log("[find-posts] Scored", scores.length, "posts, keeping score >= 6");
+    } catch (err) {
+      console.warn("[find-posts] Relevance scoring failed, using all posts:", err);
+      // Fallback: keep all posts
+      rawPosts.forEach((_, i) => scoredIndices.set(i, 7));
+    }
+
+    // Filter to keep only relevant posts (score >= 6)
+    const filteredPosts = rawPosts
+      .slice(0, 25)
+      .map((p, i) => ({ post: p, score: scoredIndices.get(i) ?? 5 }))
+      .filter((item) => item.score >= 6)
+      .sort((a, b) => b.score - a.score);
+
+    console.log("[find-posts] After filtering:", filteredPosts.length, "relevant posts");
+
+    if (filteredPosts.length === 0) {
+      return NextResponse.json({ posts: [] });
+    }
+
+    // Step 3: Use Claude to analyze filtered posts and generate engagement strategies
+    const postsForAnalysis = filteredPosts.slice(0, 15).map((item, i) => ({
+      idx: i,
+      author: item.post.authorName,
+      title: item.post.authorTitle,
+      company: item.post.authorCompany,
+      content: item.post.content.slice(0, 500),
     }));
 
     const analysisRes = await client.messages.create({
@@ -98,8 +157,9 @@ No markdown fences. No explanation. Just the JSON array.`,
       suggestedComment: string;
     }> = JSON.parse(analysisText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim());
 
-    // Map to LinkedInPost objects (rawPosts already filtered for valid content)
-    const posts: LinkedInPost[] = rawPosts.slice(0, 15).map((p, i) => {
+    // Map to LinkedInPost objects
+    const posts: LinkedInPost[] = filteredPosts.slice(0, 15).map((item, i) => {
+      const p = item.post;
       const analysis = analyses.find((a) => a.idx === i);
       return {
         id: `lp-${i}-${Date.now()}`,
@@ -115,6 +175,7 @@ No markdown fences. No explanation. Just the JSON array.`,
         whyRelevant: analysis?.whyRelevant || "Relevant to your product space",
         commentStrategy: analysis?.commentStrategy || "Engage with a thoughtful comment",
         suggestedComment: analysis?.suggestedComment || "",
+        relevanceScore: item.score,
       };
     });
 

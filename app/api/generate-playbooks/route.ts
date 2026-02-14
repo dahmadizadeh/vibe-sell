@@ -7,13 +7,21 @@ export const maxDuration = 60;
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
-  const { description, appName, industry, competitors, viabilityAnalysis } = (await req.json()) as {
+  const { description, appName, industry, competitors, viabilityAnalysis, projectGoal } = (await req.json()) as {
     description: string;
     appName: string;
     industry: string;
     competitors?: string[];
     viabilityAnalysis?: { summary: string; topOpportunities: string[] };
+    projectGoal?: import("@/lib/types").ProjectGoal;
   };
+
+  const goalContextMap: Record<string, string> = {
+    side_project: "\n\nThis is a SIDE PROJECT. Focus playbooks on: validation experiments, finding first 10 users, community-driven growth, low-cost tactics.",
+    small_business: "\n\nThis is a SMALL BUSINESS. Focus playbooks on: acquiring paying customers, sustainable channels, unit economics, referral programs.",
+    venture_scale: "\n\nThis is a VENTURE-SCALE STARTUP. Focus playbooks on: design partners, enterprise sales, investor outreach, rapid scaling, network effects.",
+  };
+  const goalContext = projectGoal ? (goalContextMap[projectGoal] || "") : "";
 
   try {
     const res = await client.messages.create({
@@ -22,7 +30,7 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `You are a startup growth strategist. Create 4-6 actionable growth playbooks for "${appName}" in ${industry}: "${description}".
+          content: `You are a startup growth strategist. Create 4-6 actionable growth playbooks for "${appName}" in ${industry}: "${description}".${goalContext}
 ${competitors?.length ? `\nCompetitors: ${competitors.join(", ")}` : ""}
 ${viabilityAnalysis ? `\nViability summary: ${viabilityAnalysis.summary}\nTop opportunities: ${viabilityAnalysis.topOpportunities.join(", ")}` : ""}
 

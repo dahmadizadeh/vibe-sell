@@ -5,9 +5,10 @@ import { generateSuggestedQuestions } from "@/lib/ai-conversations";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const { description, appName } = (await req.json()) as {
+  const { description, appName, projectGoal } = (await req.json()) as {
     description: string;
     appName: string;
+    projectGoal?: import("@/lib/types").ProjectGoal;
   };
 
   const results: {
@@ -21,8 +22,8 @@ export async function POST(req: NextRequest) {
 
   // Run viability analysis, smart targeting, and suggested questions in parallel
   const [viabilityResult, targetingResult, questionsResult] = await Promise.allSettled([
-    analyzeBusinessViability(description, appName),
-    generateSmartTargeting(description, appName),
+    analyzeBusinessViability(description, appName, projectGoal),
+    generateSmartTargeting(description, appName, projectGoal),
     generateSuggestedQuestions(appName, description),
   ]);
 

@@ -14,8 +14,11 @@ import { EmailComposer } from "@/components/EmailComposer";
 import { useAppStore } from "@/lib/store";
 import { uniqueCompanies } from "@/lib/utils";
 import { PostCard } from "@/components/PostCard";
+import { CompetitorPills } from "@/components/CompetitorPills";
+import { CompanyCard } from "@/components/CompanyCard";
+import { FounderCard } from "@/components/FounderCard";
 import { ConversationsTab } from "@/components/ConversationsTab";
-import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage, PostTemplate, Conversation, LinkedInPost } from "@/lib/types";
+import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage, PostTemplate, Conversation, LinkedInPost, ProjectGoal } from "@/lib/types";
 import { generateId } from "@/lib/utils";
 
 function LinkedInPostCard({ post }: { post: LinkedInPost }) {
@@ -43,9 +46,20 @@ function LinkedInPostCard({ post }: { post: LinkedInPost }) {
           <p className="font-semibold text-gray-900 text-sm truncate">{post.authorName}</p>
           <p className="text-xs text-gray-500 truncate">{post.authorTitle}{post.authorCompany ? ` at ${post.authorCompany}` : ""}</p>
         </div>
-        {post.postDate && (
-          <span className="text-xs text-gray-400 shrink-0">{post.postDate}</span>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {post.relevanceScore !== undefined && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+              post.relevanceScore >= 8 ? "bg-green-100 text-green-700" :
+              post.relevanceScore >= 6 ? "bg-yellow-100 text-yellow-700" :
+              "bg-gray-100 text-gray-500"
+            }`}>
+              {post.relevanceScore}/10
+            </span>
+          )}
+          {post.postDate && (
+            <span className="text-xs text-gray-400">{post.postDate}</span>
+          )}
+        </div>
       </div>
 
       {/* Post content */}
@@ -136,8 +150,17 @@ export default function ProjectPage() {
   const [addUrlValue, setAddUrlValue] = useState("");
   const [linkedInSubTab, setLinkedInSubTab] = useState<"relevant" | "competitors">("relevant");
   const [editingCompetitors, setEditingCompetitors] = useState(false);
-  const [newCompetitor, setNewCompetitor] = useState("");
   const [seoLoading, setSeoLoading] = useState(false);
+  const [refetchingCompetitorPosts, setRefetchingCompetitorPosts] = useState(false);
+  const [contactsView, setContactsView] = useState<"people" | "companies">("people");
+  const [enrichedCompanyData, setEnrichedCompanyData] = useState<Record<string, {
+    linkedinLogoUrl?: string; website?: string; hq?: string;
+    totalFunding?: number; headcount?: number; headcountGrowth?: number; industry?: string;
+  }>>({});
+  const [enrichingCompanies, setEnrichingCompanies] = useState(false);
+  const [founderUrl, setFounderUrl] = useState("");
+  const [addingFounder, setAddingFounder] = useState(false);
+  const [analyzingFounders, setAnalyzingFounders] = useState(false);
 
   useEffect(() => {
     hydrate();
@@ -174,7 +197,7 @@ export default function ProjectPage() {
   const handleWriteEmail = useCallback((contact: Contact) => {
     setComposerContactId(contact.id);
 
-    if (!contact.email && contact.linkedinUrl && project) {
+    if ((!contact.email || !contact.profilePhotoUrl) && contact.linkedinUrl && project) {
       fetch("/api/enrich-contacts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -183,11 +206,17 @@ export default function ProjectPage() {
         .then((res) => res.json())
         .then((result) => {
           const match = result.enriched?.find(
-            (e: { linkedinUrl: string; email?: string }) => e.linkedinUrl === contact.linkedinUrl
+            (e: { linkedinUrl: string; email?: string; profilePhotoUrl?: string }) => e.linkedinUrl === contact.linkedinUrl
           );
-          if (match?.email) {
+          if (match?.email || match?.profilePhotoUrl) {
             const updated = project.contacts.map((c) =>
-              c.id === contact.id ? { ...c, email: match.email } : c
+              c.id === contact.id
+                ? {
+                    ...c,
+                    ...(match.email && !c.email ? { email: match.email } : {}),
+                    ...(match.profilePhotoUrl && !c.profilePhotoUrl ? { profilePhotoUrl: match.profilePhotoUrl } : {}),
+                  }
+                : c
             );
             setContacts(project.id, updated);
           }
@@ -285,6 +314,53 @@ export default function ProjectPage() {
       updatePMFScore(project.id, result.pmfScore);
     }
   }, [project, updatePMFScore]);
+
+  // Group contacts by company for company view
+  const companyGroups = useMemo(() => {
+    if (!project) return [];
+    const map = new Map<string, Contact[]>();
+    for (const c of project.contacts) {
+      const key = c.company || "Unknown";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(c);
+    }
+    return Array.from(map.entries())
+      .map(([name, contacts]) => ({ name, contacts }))
+      .sort((a, b) => b.contacts.length - a.contacts.length);
+  }, [project?.contacts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleCompetitorsChanged = useCallback(async (updated: string[]) => {
+    if (!project) return;
+    updateProject(id, {
+      detectedCompetitors: updated,
+      ...(project.importedAnalysis ? { importedAnalysis: { ...project.importedAnalysis, competitors: updated } } : {}),
+    });
+
+    // Re-fetch competitor posts
+    if (updated.length > 0) {
+      setRefetchingCompetitorPosts(true);
+      try {
+        const res = await fetch("/api/find-posts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: project.description,
+            appName: project.productPage?.name || project.title,
+            industry: project.targeting?.industries?.[0] || "Technology",
+            competitors: updated,
+          }),
+        });
+        const result = await res.json();
+        updateProject(id, { competitorPosts: result.posts || [] });
+      } catch (err) {
+        console.error("Competitor posts re-fetch failed:", err);
+      } finally {
+        setRefetchingCompetitorPosts(false);
+      }
+    } else {
+      updateProject(id, { competitorPosts: [] });
+    }
+  }, [project, id, updateProject]);
 
   if (!hydrated || !project) {
     return (
@@ -464,12 +540,25 @@ export default function ProjectPage() {
                     App preview unavailable
                   </h3>
                   <p className="text-sm text-gray-500 mb-4 max-w-md mx-auto">
-                    The live app couldn&apos;t be generated. You can still view your product details and reach out to potential customers.
+                    The AI generated app metadata but the code was truncated or couldn&apos;t be parsed. Your business analysis and contacts are still available.
                   </p>
-                  <ProductPagePreview
-                    page={project.productPage}
-                    onUpdate={handleProductPageUpdate}
-                  />
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={() => {
+                        const desc = project.description;
+                        router.push(`/loading?description=${encodeURIComponent(desc)}&source=idea`);
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors"
+                    >
+                      Retry App Generation
+                    </button>
+                  </div>
+                  <div className="mt-4">
+                    <ProductPagePreview
+                      page={project.productPage}
+                      onUpdate={handleProductPageUpdate}
+                    />
+                  </div>
                 </div>
               </Card>
             )}
@@ -477,16 +566,51 @@ export default function ProjectPage() {
             {!project.productPage && !project.externalAppUrl && project.source !== 'description' && (
               <Card className="p-6 mb-6">
                 <div className="text-center py-8">
-                  <div className="text-4xl mb-4">&#x1F6E0;&#xFE0F;</div>
+                  <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    No app generated yet
+                    App generation failed
                   </h3>
-                  <p className="text-sm text-gray-500 max-w-md mx-auto">
-                    App generation may have failed. Try creating a new project with a different description.
+                  <p className="text-sm text-gray-500 max-w-md mx-auto mb-4">
+                    The AI couldn&apos;t generate the app preview. This usually means the API timed out or returned an error. Your business analysis and contacts are still available.
                   </p>
+                  <button
+                    onClick={() => {
+                      const desc = project.description;
+                      router.push(`/loading?description=${encodeURIComponent(desc)}&source=idea`);
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors"
+                  >
+                    Retry App Generation
+                  </button>
                 </div>
               </Card>
             )}
+
+            {/* Goal Selector */}
+            <Card className="p-4 mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Goal</span>
+                <div className="flex gap-2">
+                  {([
+                    { key: 'side_project' as ProjectGoal, label: 'Side Project', icon: '\u{1F9EA}' },
+                    { key: 'small_business' as ProjectGoal, label: 'Small Business', icon: '\u{1F3EA}' },
+                    { key: 'venture_scale' as ProjectGoal, label: 'Venture Scale', icon: '\u{1F680}' },
+                  ]).map((g) => (
+                    <button
+                      key={g.key}
+                      onClick={() => updateProject(id, { projectGoal: g.key })}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                        project.projectGoal === g.key
+                          ? "bg-brand-primary text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {g.icon} {g.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Card>
 
             {/* Imported Analysis Card */}
             {project.importedAnalysis && (
@@ -507,64 +631,20 @@ export default function ProjectPage() {
                     <span className="text-xs font-medium text-gray-400">Industry</span>
                     <p className="text-sm text-gray-700">{project.importedAnalysis.industry}</p>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-gray-400">Competitors</span>
-                      <button
-                        onClick={() => setEditingCompetitors(!editingCompetitors)}
-                        className="text-xs text-brand-primary hover:underline"
-                      >
-                        {editingCompetitors ? "Done" : "Edit"}
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {(project.detectedCompetitors || project.importedAnalysis.competitors).map((c, i) => (
-                        <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full flex items-center gap-1">
-                          {c}
-                          {editingCompetitors && (
-                            <button
-                              onClick={() => {
-                                const current = project.detectedCompetitors || [...project.importedAnalysis!.competitors];
-                                const updated = current.filter((_, idx) => idx !== i);
-                                updateProject(id, {
-                                  detectedCompetitors: updated,
-                                  importedAnalysis: { ...project.importedAnalysis!, competitors: updated },
-                                });
-                              }}
-                              className="text-gray-400 hover:text-red-500 ml-0.5"
-                            >
-                              x
-                            </button>
-                          )}
-                        </span>
-                      ))}
-                      {editingCompetitors && (
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            if (newCompetitor.trim()) {
-                              const current = project.detectedCompetitors || [...project.importedAnalysis!.competitors];
-                              const updated = [...current, newCompetitor.trim()];
-                              updateProject(id, {
-                                detectedCompetitors: updated,
-                                importedAnalysis: { ...project.importedAnalysis!, competitors: updated },
-                              });
-                              setNewCompetitor("");
-                            }
-                          }}
-                          className="flex items-center gap-1"
-                        >
-                          <input
-                            type="text"
-                            value={newCompetitor}
-                            onChange={(e) => setNewCompetitor(e.target.value)}
-                            placeholder="+ Add"
-                            className="w-20 px-2 py-0.5 text-xs border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:ring-brand-primary/30"
-                          />
-                        </form>
-                      )}
-                    </div>
-                  </div>
+                  <CompetitorPills
+                    competitors={project.detectedCompetitors || project.importedAnalysis.competitors}
+                    editing={editingCompetitors}
+                    onToggleEdit={() => setEditingCompetitors(!editingCompetitors)}
+                    onRemove={(idx) => {
+                      const current = project.detectedCompetitors || [...project.importedAnalysis!.competitors];
+                      handleCompetitorsChanged(current.filter((_, i) => i !== idx));
+                    }}
+                    onAdd={(name) => {
+                      const current = project.detectedCompetitors || [...project.importedAnalysis!.competitors];
+                      handleCompetitorsChanged([...current, name]);
+                    }}
+                    loading={refetchingCompetitorPosts}
+                  />
                 </div>
               </Card>
             )}
@@ -572,56 +652,166 @@ export default function ProjectPage() {
             {/* Competitors card (when no importedAnalysis but we have detectedCompetitors) */}
             {!project.importedAnalysis && project.detectedCompetitors && project.detectedCompetitors.length > 0 && (
               <Card className="p-6 mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Competitors</h3>
-                  <button
-                    onClick={() => setEditingCompetitors(!editingCompetitors)}
-                    className="text-xs text-brand-primary hover:underline"
-                  >
-                    {editingCompetitors ? "Done" : "Edit"}
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {project.detectedCompetitors.map((c, i) => (
-                    <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full flex items-center gap-1">
-                      {c}
-                      {editingCompetitors && (
-                        <button
-                          onClick={() => {
-                            const updated = project.detectedCompetitors!.filter((_, idx) => idx !== i);
-                            updateProject(id, { detectedCompetitors: updated });
-                          }}
-                          className="text-gray-400 hover:text-red-500 ml-0.5"
-                        >
-                          x
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                  {editingCompetitors && (
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        if (newCompetitor.trim()) {
-                          const updated = [...(project.detectedCompetitors || []), newCompetitor.trim()];
-                          updateProject(id, { detectedCompetitors: updated });
-                          setNewCompetitor("");
-                        }
-                      }}
-                      className="flex items-center gap-1"
-                    >
-                      <input
-                        type="text"
-                        value={newCompetitor}
-                        onChange={(e) => setNewCompetitor(e.target.value)}
-                        placeholder="+ Add"
-                        className="w-20 px-2 py-0.5 text-xs border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:ring-brand-primary/30"
-                      />
-                    </form>
-                  )}
-                </div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Competitors</h3>
+                <CompetitorPills
+                  competitors={project.detectedCompetitors}
+                  editing={editingCompetitors}
+                  onToggleEdit={() => setEditingCompetitors(!editingCompetitors)}
+                  onRemove={(idx) => {
+                    handleCompetitorsChanged(project.detectedCompetitors!.filter((_, i) => i !== idx));
+                  }}
+                  onAdd={(name) => {
+                    handleCompetitorsChanged([...(project.detectedCompetitors || []), name]);
+                  }}
+                  loading={refetchingCompetitorPosts}
+                />
               </Card>
             )}
+
+            {/* Founding Team */}
+            <Card className="p-6 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+                  Founding Team
+                </h3>
+              </div>
+
+              {/* Existing founders */}
+              {project.founders && project.founders.length > 0 && (
+                <div className="space-y-3 mb-4">
+                  {project.founders.map((founder) => (
+                    <FounderCard
+                      key={founder.id}
+                      founder={founder}
+                      onRemove={() => {
+                        const updated = project.founders!.filter((f) => f.id !== founder.id);
+                        updateProject(id, { founders: updated });
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Add founder input */}
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={founderUrl}
+                  onChange={(e) => setFounderUrl(e.target.value)}
+                  placeholder="Paste LinkedIn URL..."
+                  className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary"
+                />
+                <button
+                  onClick={async () => {
+                    if (!founderUrl.trim()) return;
+                    setAddingFounder(true);
+                    try {
+                      const res = await fetch("/api/enrich-founder", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ linkedinUrl: founderUrl.trim() }),
+                      });
+                      const result = await res.json();
+                      if (result.founder) {
+                        const existing = project.founders || [];
+                        updateProject(id, { founders: [...existing, result.founder] });
+                        setFounderUrl("");
+                      }
+                    } catch (err) {
+                      console.error("Founder enrichment failed:", err);
+                    } finally {
+                      setAddingFounder(false);
+                    }
+                  }}
+                  disabled={addingFounder || !founderUrl.trim()}
+                  className="px-4 py-2 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
+                >
+                  {addingFounder ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Adding...
+                    </span>
+                  ) : "+ Add Founder"}
+                </button>
+              </div>
+
+              {/* Analyze Growth Intelligence */}
+              {project.founders && project.founders.length > 0 && (
+                <div className="mt-4">
+                  <button
+                    onClick={async () => {
+                      if (!project.founders || project.founders.length === 0) return;
+                      setAnalyzingFounders(true);
+                      try {
+                        const res = await fetch("/api/analyze-founders", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            founders: project.founders,
+                            description: project.description,
+                            appName: project.productPage?.name || project.title,
+                            projectGoal: project.projectGoal,
+                            competitors: project.detectedCompetitors,
+                          }),
+                        });
+                        const result = await res.json();
+                        if (result.growthIntelligence) {
+                          updateProject(id, { growthIntelligence: result.growthIntelligence });
+                        }
+                      } catch (err) {
+                        console.error("Founder analysis failed:", err);
+                      } finally {
+                        setAnalyzingFounders(false);
+                      }
+                    }}
+                    disabled={analyzingFounders}
+                    className="px-4 py-2 text-sm font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors disabled:opacity-50 w-full"
+                  >
+                    {analyzingFounders ? (
+                      <span className="flex items-center justify-center gap-1.5">
+                        <span className="w-3.5 h-3.5 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+                        Analyzing growth intelligence...
+                      </span>
+                    ) : "Analyze Growth Intelligence"}
+                  </button>
+                </div>
+              )}
+
+              {/* Growth Intelligence Results */}
+              {project.growthIntelligence && (
+                <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+                  {([
+                    { key: "networkLeverage", label: "Network Leverage", icon: "\u{1F310}" },
+                    { key: "contentAuthority", label: "Content Authority", icon: "\u{1F4DD}" },
+                    { key: "warmIntroPaths", label: "Warm Intro Paths", icon: "\u{1F91D}" },
+                    { key: "credibilitySignals", label: "Credibility Signals", icon: "\u{2B50}" },
+                  ] as const).map((section) => (
+                    <div key={section.key}>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        {section.icon} {section.label}
+                      </p>
+                      <p className="text-sm text-gray-700">
+                        {project.growthIntelligence![section.key]}
+                      </p>
+                    </div>
+                  ))}
+                  {project.growthIntelligence.channelFit.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                        {"\u{1F3AF}"} Best Channels
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {project.growthIntelligence.channelFit.map((ch, i) => (
+                          <span key={i} className="px-2.5 py-1 text-xs bg-brand-primary/10 text-brand-primary rounded-full font-medium">
+                            {ch}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
 
             {/* Viability Analysis */}
             {project.viabilityAnalysis ? (
@@ -774,7 +964,7 @@ export default function ProjectPage() {
             <div className="flex gap-1 mb-4 flex-wrap">
               {[
                 { key: "customers" as const, label: "Users & Customers", icon: "\u{1F465}" },
-                { key: "investors" as const, label: "Investors", icon: "\u{1F4B0}" },
+                ...(project.projectGoal !== 'side_project' ? [{ key: "investors" as const, label: "Investors", icon: "\u{1F4B0}" }] : []),
                 { key: "teammates" as const, label: "Teammates", icon: "\u{1F91D}" },
                 { key: "linkedin" as const, label: "LinkedIn Posts", icon: "\u{1F4AC}" },
               ].map((sub) => (
@@ -796,9 +986,29 @@ export default function ProjectPage() {
             {/* Sub-tab: Users & Customers */}
             {peopleSubTab === "customers" && (
               <Card className="p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-1">
-                  Who to Reach Out To
-                </h2>
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Who to Reach Out To
+                  </h2>
+                  <div className="inline-flex bg-gray-100 rounded-lg p-0.5">
+                    <button
+                      onClick={() => setContactsView("people")}
+                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                        contactsView === "people" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
+                      }`}
+                    >
+                      People
+                    </button>
+                    <button
+                      onClick={() => setContactsView("companies")}
+                      className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                        contactsView === "companies" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
+                      }`}
+                    >
+                      Companies
+                    </button>
+                  </div>
+                </div>
                 <p className="text-sm text-gray-500 mb-3">
                   {project.contacts.length} people across {uniqueCompanies(project.contacts)} companies
                 </p>
@@ -851,11 +1061,69 @@ export default function ProjectPage() {
                   </p>
                 )}
 
-                <ContactList
-                  contacts={activeAudienceGroup === null ? project.contacts : activeContacts}
-                  onWriteEmail={handleWriteEmail}
-                  emailDrafts={project.emailDrafts}
-                />
+                {contactsView === "people" ? (
+                  <ContactList
+                    contacts={activeAudienceGroup === null ? project.contacts : activeContacts}
+                    onWriteEmail={handleWriteEmail}
+                    emailDrafts={project.emailDrafts}
+                  />
+                ) : (
+                  <div>
+                    {/* Enrich button */}
+                    <div className="flex justify-end mb-3">
+                      <button
+                        onClick={async () => {
+                          setEnrichingCompanies(true);
+                          try {
+                            const names = companyGroups.slice(0, 20).map((g) => g.name);
+                            const res = await fetch("/api/enrich-companies", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ companyNames: names }),
+                            });
+                            const result = await res.json();
+                            if (result.companies) {
+                              setEnrichedCompanyData((prev) => ({ ...prev, ...result.companies }));
+                            }
+                          } catch (err) {
+                            console.error("Company enrichment failed:", err);
+                          } finally {
+                            setEnrichingCompanies(false);
+                          }
+                        }}
+                        disabled={enrichingCompanies}
+                        className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors disabled:opacity-50"
+                      >
+                        {enrichingCompanies ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3 h-3 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+                            Enriching...
+                          </span>
+                        ) : "Enrich Companies"}
+                      </button>
+                    </div>
+                    <div className="space-y-3">
+                      {companyGroups.map((group) => {
+                        const enriched = enrichedCompanyData[group.name];
+                        return (
+                          <CompanyCard
+                            key={group.name}
+                            name={group.name}
+                            contacts={group.contacts}
+                            industry={enriched?.industry || group.contacts[0]?.industry}
+                            headcount={enriched?.headcount || group.contacts[0]?.companySize}
+                            hq={enriched?.hq}
+                            website={enriched?.website}
+                            logoUrl={enriched?.linkedinLogoUrl}
+                            totalFunding={enriched?.totalFunding}
+                            headcountGrowth={enriched?.headcountGrowth}
+                            onWriteEmail={handleWriteEmail}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </Card>
             )}
 
@@ -991,12 +1259,20 @@ export default function ProjectPage() {
                 {linkedInSubTab === "competitors" && (
                   <>
                     {project.detectedCompetitors && project.detectedCompetitors.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mb-4">
-                        {project.detectedCompetitors.map((c, i) => (
-                          <span key={i} className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded-full">
-                            {c}
-                          </span>
-                        ))}
+                      <div className="mb-4">
+                        <CompetitorPills
+                          competitors={project.detectedCompetitors}
+                          editing={editingCompetitors}
+                          onToggleEdit={() => setEditingCompetitors(!editingCompetitors)}
+                          onRemove={(idx) => {
+                            handleCompetitorsChanged(project.detectedCompetitors!.filter((_, i) => i !== idx));
+                          }}
+                          onAdd={(name) => {
+                            handleCompetitorsChanged([...(project.detectedCompetitors || []), name]);
+                          }}
+                          variant="orange"
+                          loading={refetchingCompetitorPosts}
+                        />
                       </div>
                     )}
                     {project.competitorPosts && project.competitorPosts.length > 0 ? (

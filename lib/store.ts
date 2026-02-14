@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Project, Contact, EmailDraft, Targeting, ProductPage, PitchPage, ProjectMode, UserProfile, Conversation, PMFScore } from "./types";
+import type { Project, Contact, EmailDraft, Targeting, ProductPage, PitchPage, ProjectMode, ProjectGoal, UserProfile, Conversation, PMFScore } from "./types";
 import { loadAllProjects, saveProject } from "./project-store";
 import { generateId } from "./utils";
 
@@ -19,6 +19,7 @@ interface AppState {
     targetCompanies?: string[];
     source?: 'idea' | 'url' | 'description';
     externalAppUrl?: string;
+    projectGoal?: ProjectGoal;
   }) => string; // returns project id
   getProject: (id: string) => Project | undefined;
   updateProject: (id: string, partial: Partial<Project>) => void;
@@ -56,7 +57,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ projects, userProfile });
   },
 
-  createProject: ({ mode, title, description, targetCompanies, source, externalAppUrl }) => {
+  createProject: ({ mode, title, description, targetCompanies, source, externalAppUrl, projectGoal }) => {
     const id = generateId();
     const project: Project = {
       id,
@@ -71,6 +72,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       targetCompanies,
       source: source || 'idea',
       externalAppUrl,
+      projectGoal,
     };
     saveProject(project);
     set((state) => ({ projects: [...state.projects, project], currentProjectId: id }));

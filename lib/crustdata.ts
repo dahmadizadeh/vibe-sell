@@ -14,6 +14,10 @@ interface CrustdataPersonRecord {
   linkedin_profile_url?: string;
   linkedin_flagship_url?: string;
   profile_picture_url?: string;
+  profile_photo_url?: string;
+  avatar_url?: string;
+  photo_url?: string;
+  image_url?: string;
   current_employers?: Array<{
     employee_title?: string;
     employer_name?: string;
@@ -35,7 +39,7 @@ interface CrustdataPersonRecord {
   }>;
 }
 
-interface CrustdataCompanyRecord {
+export interface CrustdataCompanyRecord {
   company_name?: string;
   company_website_domain?: string;
   total_headcount?: number;
@@ -43,6 +47,9 @@ interface CrustdataCompanyRecord {
   job_openings_count?: number;
   total_funding?: number;
   company_industries?: string[];
+  linkedin_logo_url?: string;
+  linkedin_company_url?: string;
+  headquarters?: string;
 }
 
 // ─── API Functions ───────────────────────────────────────────────────────────
@@ -114,11 +121,11 @@ export async function searchPeople(
 
 export async function enrichPeople(
   linkedinUrls: string[]
-): Promise<Array<{ linkedin_profile_url: string; business_email?: string }>> {
+): Promise<Array<{ linkedin_profile_url: string; business_email?: string; profile_photo_url?: string }>> {
   if (!API_KEY) throw new Error("CRUSTDATA_API_KEY not set");
   if (linkedinUrls.length === 0) return [];
 
-  const results: Array<{ linkedin_profile_url: string; business_email?: string }> = [];
+  const results: Array<{ linkedin_profile_url: string; business_email?: string; profile_photo_url?: string }> = [];
 
   // Batch in groups of 25
   for (let i = 0; i < linkedinUrls.length; i += 25) {
@@ -152,10 +159,12 @@ export async function enrichPeople(
         email = employer.business_email;
       }
       const linkedinUrl = p.linkedin_profile_url || p.linkedin_flagship_url;
+      const photoUrl = p.profile_picture_url || p.profile_photo_url || p.avatar_url || p.photo_url || p.image_url;
       if (linkedinUrl) {
         results.push({
           linkedin_profile_url: linkedinUrl,
           business_email: email,
+          profile_photo_url: photoUrl || undefined,
         });
       }
     }
@@ -296,6 +305,85 @@ export async function searchLinkedInPosts(
   }
 }
 
+// ─── Full Person Enrichment ──────────────────────────────────────────────────
+
+export async function enrichPersonFull(
+  linkedinUrl: string
+): Promise<CrustdataPersonRecord | null> {
+  if (!API_KEY) throw new Error("CRUSTDATA_API_KEY not set");
+
+  const params = new URLSearchParams();
+  params.append("linkedin_profile_url", linkedinUrl);
+
+  const res = await fetch(`${BASE_URL}/screener/person/enrich?${params}`, {
+    headers: { Authorization: `Token ${API_KEY}` },
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.error("[crustdata] enrichPersonFull error:", res.status, body.slice(0, 300));
+    throw new Error(`Crustdata person enrich failed: ${res.status}`);
+  }
+
+  const data = await res.json();
+  const profiles: CrustdataPersonRecord[] = data.profiles || data.results || (Array.isArray(data) ? data : [data]);
+  return profiles[0] || null;
+}
+
+// ─── Person LinkedIn Posts ──────────────────────────────────────────────────
+
+export interface PersonLinkedInPost {
+  content: string;
+  reactions: number;
+  comments: number;
+  date?: string;
+}
+
+export async function getPersonLinkedInPosts(
+  linkedinUrl: string,
+  pages: number = 1
+): Promise<PersonLinkedInPost[]> {
+  if (!API_KEY) throw new Error("CRUSTDATA_API_KEY not set");
+
+  const allPosts: PersonLinkedInPost[] = [];
+
+  for (let page = 1; page <= pages; page++) {
+    try {
+      const params = new URLSearchParams();
+      params.append("person_linkedin_url", linkedinUrl);
+      params.append("page", String(page));
+
+      const res = await fetch(`${BASE_URL}/screener/linkedin_posts?${params}`, {
+        headers: { Authorization: `Token ${API_KEY}` },
+      });
+
+      if (!res.ok) {
+        console.warn("[crustdata] getPersonLinkedInPosts page", page, "failed:", res.status);
+        break;
+      }
+
+      const data = await res.json();
+      const rawPosts: Record<string, unknown>[] = data.posts || data.results || (Array.isArray(data) ? data : []);
+
+      for (const raw of rawPosts) {
+        allPosts.push({
+          content: ((raw.text || raw.content || raw.body || "") as string).slice(0, 500),
+          reactions: (raw.total_reactions || raw.reactions_count || raw.likes || 0) as number,
+          comments: (raw.total_comments || raw.comments_count || raw.comments || 0) as number,
+          date: (raw.date_posted || raw.posted_at || raw.date || "") as string,
+        });
+      }
+
+      if (rawPosts.length === 0) break;
+    } catch (err) {
+      console.warn("[crustdata] getPersonLinkedInPosts error:", err);
+      break;
+    }
+  }
+
+  return allPosts;
+}
+
 // ─── Mapping Helpers ─────────────────────────────────────────────────────────
 
 export function mapPersonToContact(
@@ -314,7 +402,16 @@ export function mapPersonToContact(
   const company = normalizeCompanyName(companyName || companyDomain || "Unknown");
   const headcount = employer.company_headcount_latest || 0;
   const industry = employer.company_industries?.[0] || "Technology";
-  const photoUrl = person.profile_picture_url;
+  const photoUrl = person.profile_picture_url || person.profile_photo_url || person.avatar_url || person.photo_url || person.image_url;
+
+  // Debug: log when no photo URL found
+  if (!photoUrl) {
+    const personKeys = Object.keys(person);
+    const photoKeys = personKeys.filter((k) => /photo|picture|image|avatar/i.test(k));
+    if (photoKeys.length > 0) {
+      console.log("[crustdata] Unrecognized photo fields for", person.name, ":", photoKeys);
+    }
+  }
 
   // Extract email from business_emails (object or array) with legacy fallback
   let email: string | undefined;

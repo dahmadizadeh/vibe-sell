@@ -7,10 +7,11 @@ export async function POST(req: NextRequest) {
   try {
     const results = await enrichPeople(linkedinUrls);
     const enriched = results
-      .filter((r) => r.business_email)
+      .filter((r) => r.business_email || r.profile_photo_url)
       .map((r) => ({
         linkedinUrl: r.linkedin_profile_url,
         email: r.business_email,
+        profilePhotoUrl: r.profile_photo_url,
       }));
 
     return NextResponse.json({ enriched });

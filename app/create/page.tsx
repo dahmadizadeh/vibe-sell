@@ -10,7 +10,7 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { useAppStore } from "@/lib/store";
 import { COPY } from "@/lib/copy";
-import type { ProjectMode } from "@/lib/types";
+import type { ProjectMode, ProjectGoal } from "@/lib/types";
 
 function CreateContent() {
   const searchParams = useSearchParams();
@@ -24,6 +24,11 @@ function CreateContent() {
   const { projects, createProject, hydrate, userProfile, setUserProfile } = useAppStore();
   const [hydrated, setHydrated] = useState(false);
   const autoStartedRef = useRef(false);
+
+  // Goal selection state
+  const [showGoalStep, setShowGoalStep] = useState(false);
+  const [projectGoal, setProjectGoal] = useState<ProjectGoal | null>(null);
+  const [pendingSubmit, setPendingSubmit] = useState<(() => void) | null>(null);
 
   // Import sub-mode state
   const [builderSubMode, setBuilderSubMode] = useState<'idea' | 'import'>('idea');
@@ -51,11 +56,31 @@ function CreateContent() {
     }
   }, [hydrated, userProfile, initialIdea, initialSource, initialUrl]);
 
+  const handleGoalSelect = (goal: ProjectGoal) => {
+    setProjectGoal(goal);
+    setShowGoalStep(false);
+    if (pendingSubmit) {
+      // Execute the pending submit with the selected goal
+      pendingSubmit();
+      setPendingSubmit(null);
+    }
+  };
+
   const handleBuilderSubmit = (description: string, notes?: string) => {
     const fullDescription = notes ? `${description}\n\nAdditional context: ${notes}` : description;
     const title = description.slice(0, 60);
-    const id = createProject({ mode: "builder", title, description: fullDescription });
-    router.push(`/loading?projectId=${id}`);
+
+    const doSubmit = () => {
+      const id = createProject({ mode: "builder", title, description: fullDescription, projectGoal: projectGoal || undefined });
+      router.push(`/loading?projectId=${id}`);
+    };
+
+    if (!projectGoal) {
+      setPendingSubmit(() => doSubmit);
+      setShowGoalStep(true);
+      return;
+    }
+    doSubmit();
   };
 
   const handleSellerSubmit = (description: string, companies: string[], titles?: string[]) => {
@@ -82,21 +107,37 @@ function CreateContent() {
     setImportError("");
     const source: 'url' | 'description' = url ? 'url' : 'description';
     const title = desc ? desc.slice(0, 60) : url;
-    const id = createProject({
-      mode: "builder",
-      title,
-      description: desc || url,
-      source,
-      externalAppUrl: url || undefined,
-    });
-    router.push(`/loading?projectId=${id}`);
+
+    const doSubmit = () => {
+      const id = createProject({
+        mode: "builder",
+        title,
+        description: desc || url,
+        source,
+        externalAppUrl: url || undefined,
+        projectGoal: projectGoal || undefined,
+      });
+      router.push(`/loading?projectId=${id}`);
+    };
+
+    if (!projectGoal) {
+      setPendingSubmit(() => doSubmit);
+      setShowGoalStep(true);
+      return;
+    }
+    doSubmit();
   };
 
   // Auto-start builder flow if ?idea= is present from landing page
   useEffect(() => {
     if (hydrated && initialIdea && !autoStartedRef.current) {
       autoStartedRef.current = true;
-      handleBuilderSubmit(initialIdea);
+      // Show goal step before starting
+      setPendingSubmit(() => () => {
+        const id = createProject({ mode: "builder", title: initialIdea.slice(0, 60), description: initialIdea, projectGoal: projectGoal || undefined });
+        router.push(`/loading?projectId=${id}`);
+      });
+      setShowGoalStep(true);
     }
   }, [hydrated, initialIdea]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -104,14 +145,18 @@ function CreateContent() {
   useEffect(() => {
     if (hydrated && initialSource === 'url' && initialUrl && !autoStartedRef.current) {
       autoStartedRef.current = true;
-      const id = createProject({
-        mode: "builder",
-        title: initialUrl,
-        description: initialUrl,
-        source: 'url',
-        externalAppUrl: initialUrl,
+      setPendingSubmit(() => () => {
+        const id = createProject({
+          mode: "builder",
+          title: initialUrl,
+          description: initialUrl,
+          source: 'url',
+          externalAppUrl: initialUrl,
+          projectGoal: projectGoal || undefined,
+        });
+        router.push(`/loading?projectId=${id}`);
       });
-      router.push(`/loading?projectId=${id}`);
+      setShowGoalStep(true);
     }
   }, [hydrated, initialSource, initialUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -133,8 +178,8 @@ function CreateContent() {
         .slice(0, 4)
     : [];
 
-  // If auto-starting, show a loading spinner
-  if (initialIdea || (initialSource === 'url' && initialUrl)) {
+  // If auto-starting and goal already selected, show a loading spinner
+  if ((initialIdea || (initialSource === 'url' && initialUrl)) && !showGoalStep) {
     return (
       <div className="min-h-[calc(100vh-56px)] flex items-center justify-center">
         <div className="text-center">
@@ -271,6 +316,40 @@ function CreateContent() {
           )}
         </div>
       </div>
+
+      {/* Goal Selection Modal */}
+      {showGoalStep && (
+        <>
+          <div className="fixed inset-0 bg-black/20 z-40 animate-fade-in" />
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg animate-slide-up">
+              <h3 className="font-semibold text-gray-900 text-lg mb-1">
+                What&apos;s your goal?
+              </h3>
+              <p className="text-sm text-gray-500 mb-5">
+                This shapes your analysis, outreach, and growth playbooks.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {([
+                  { key: 'side_project' as ProjectGoal, label: 'Side Project', desc: 'Validate an idea, find early adopters', icon: '\u{1F9EA}' },
+                  { key: 'small_business' as ProjectGoal, label: 'Small Business', desc: 'Build a profitable, sustainable business', icon: '\u{1F3EA}' },
+                  { key: 'venture_scale' as ProjectGoal, label: 'Venture Scale', desc: 'Raise funding, grow fast, go big', icon: '\u{1F680}' },
+                ]).map((goal) => (
+                  <button
+                    key={goal.key}
+                    onClick={() => handleGoalSelect(goal.key)}
+                    className="p-4 border-2 border-gray-200 rounded-xl hover:border-brand-primary hover:bg-brand-primary/5 transition-all text-left"
+                  >
+                    <span className="text-2xl block mb-2">{goal.icon}</span>
+                    <span className="font-semibold text-gray-900 text-sm block">{goal.label}</span>
+                    <span className="text-xs text-gray-500 mt-1 block">{goal.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* User Setup Modal */}
       {showSetup && (

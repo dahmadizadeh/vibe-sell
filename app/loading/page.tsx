@@ -220,11 +220,14 @@ function LoadingContent() {
 
         let streamSuccess = false;
         try {
+          console.log("[loading] Starting stream-app fetch...");
           const res = await fetch("/api/stream-app", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ description }),
           });
+
+          console.log("[loading] stream-app response status:", res.status);
 
           if (res.ok && res.body) {
             const reader = res.body.getReader();
@@ -239,37 +242,54 @@ function LoadingContent() {
               setStreamedCode(accumulated);
             }
 
-            // Parse the complete response
-            try {
-              const cleaned = accumulated.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-              const parsed = JSON.parse(cleaned);
-              productPage = {
-                name: parsed.name,
-                tagline: parsed.tagline,
-                features: parsed.features,
-                shareUrl: `/p/${generateSlug(parsed.name)}`,
-                reactCode: parsed.reactCode,
-              };
+            console.log("[loading] stream-app accumulated length:", accumulated.length);
 
-              setAppName(productPage.name);
-              setAppTagline(productPage.tagline);
-              setGenStatus("app_ready");
-              setStatusMessage(`${productPage.name} built!`);
-              addStepDetail(`Generated "${productPage.name}" \u2014 ${productPage.tagline}`);
-              setReactCode(productPage.reactCode);
-              streamSuccess = true;
+            // Check for stream error sentinel
+            if (accumulated.includes("__STREAM_ERROR__:")) {
+              const errMsg = accumulated.split("__STREAM_ERROR__:")[1];
+              console.error("[loading] stream-app returned error:", errMsg);
+              addStepDetail(`Stream error: ${errMsg?.slice(0, 100)}`);
+            } else {
+              // Parse the complete response
+              try {
+                const cleaned = accumulated.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+                const parsed = JSON.parse(cleaned);
+                productPage = {
+                  name: parsed.name,
+                  tagline: parsed.tagline,
+                  features: parsed.features,
+                  shareUrl: `/p/${generateSlug(parsed.name)}`,
+                  reactCode: parsed.reactCode,
+                };
 
-              await new Promise((r) => setTimeout(r, 2000));
-            } catch (parseErr) {
-              console.error("[loading] stream-app parse failed:", parseErr);
+                setAppName(productPage.name);
+                setAppTagline(productPage.tagline);
+                setGenStatus("app_ready");
+                setStatusMessage(`${productPage.name} built!`);
+                addStepDetail(`Generated "${productPage.name}" \u2014 ${productPage.tagline}`);
+                setReactCode(productPage.reactCode);
+                streamSuccess = true;
+
+                await new Promise((r) => setTimeout(r, 2000));
+              } catch (parseErr) {
+                console.error("[loading] stream-app parse failed:", parseErr);
+                console.error("[loading] First 300 chars:", accumulated.slice(0, 300));
+                console.error("[loading] Last 300 chars:", accumulated.slice(-300));
+                addStepDetail("App response was malformed \u2014 trying fallback...");
+              }
             }
+          } else {
+            console.error("[loading] stream-app not ok. Status:", res.status, "Body:", res.body ? "exists" : "null");
+            addStepDetail(`Stream failed (HTTP ${res.status}) \u2014 trying fallback...`);
           }
         } catch (err) {
           console.error("[loading] stream-app fetch failed:", err);
+          addStepDetail("Stream connection failed \u2014 trying fallback...");
         }
 
         // Fallback to non-streaming if streaming failed
         if (!streamSuccess) {
+          console.log("[loading] Streaming failed, trying analyze-idea fallback...");
           try {
             const res = await fetch("/api/analyze-idea", {
               method: "POST",
@@ -277,11 +297,18 @@ function LoadingContent() {
               body: JSON.stringify({ description }),
             });
 
+            console.log("[loading] analyze-idea response status:", res.status);
+
             if (!res.ok) {
-              addStepDetail("App generation encountered an issue \u2014 continuing with analysis...");
+              const errorBody = await res.json().catch(() => ({}));
+              console.error("[loading] analyze-idea failed:", res.status, errorBody);
+              addStepDetail(`App generation failed (${(errorBody as Record<string, string>)?._error || `HTTP ${res.status}`}) \u2014 continuing with analysis...`);
             } else {
               const result = await res.json();
-              if (result.productPage?.reactCode) {
+              if (result.error) {
+                console.error("[loading] analyze-idea returned error:", result._error);
+                addStepDetail(`App generation error: ${result._error?.slice(0, 100)}`);
+              } else if (result.productPage?.reactCode) {
                 productPage = result.productPage;
                 targeting = result.targeting || targeting;
                 setAppName(productPage!.name);
@@ -293,17 +320,27 @@ function LoadingContent() {
                 setReactCode(productPage!.reactCode);
                 await new Promise((r) => setTimeout(r, 2000));
               } else if (result.productPage) {
+                console.warn("[loading] analyze-idea returned productPage with no reactCode:", Object.keys(result.productPage));
                 productPage = result.productPage;
                 targeting = result.targeting || targeting;
                 setAppName(productPage!.name);
+                addStepDetail(`Got app metadata but no code \u2014 continuing with analysis...`);
+              } else {
+                console.error("[loading] analyze-idea returned unexpected shape:", Object.keys(result));
+                addStepDetail("Unexpected response from app generator \u2014 continuing...");
               }
             }
           } catch (err) {
-            console.error("[loading] analyze-idea fetch failed:", err);
-            addStepDetail("App generation failed \u2014 check API key configuration");
+            const msg = err instanceof Error ? err.message : String(err);
+            console.error("[loading] analyze-idea fetch failed:", msg);
+            addStepDetail(`App generation failed: ${msg.slice(0, 80)}`);
           }
         }
       }
+
+      // Read project goal
+      const currentProject = getProject(pid);
+      const projectGoal = currentProject?.projectGoal;
 
       // ── Step 2: Analyze viability + smart targeting (parallel) ─────
       setGenStatus("analyzing");
@@ -316,6 +353,7 @@ function LoadingContent() {
           body: JSON.stringify({
             description: enrichedDescription,
             appName: productPage?.name || "My App",
+            projectGoal,
           }),
         });
         const result = await res.json();
@@ -487,11 +525,14 @@ function LoadingContent() {
       const competitorKeywords = competitors.length > 0 ? competitors.slice(0, 5) : [];
 
       const networkPromises: Promise<unknown>[] = [
-        fetch("/api/find-investors", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(networkBody),
-        }).then((r) => r.json()),
+        // Skip investors for side_project
+        projectGoal === 'side_project'
+          ? Promise.resolve({ contacts: [] })
+          : fetch("/api/find-investors", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(networkBody),
+            }).then((r) => r.json()),
         fetch("/api/find-teammates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -570,6 +611,7 @@ function LoadingContent() {
               audienceGroups: audienceGroups || [],
               viabilityAnalysis,
               contacts: allContacts,
+              projectGoal,
             }),
           }).then((r) => r.json()),
           fetch("/api/generate-playbooks", {
@@ -584,6 +626,7 @@ function LoadingContent() {
                 summary: viabilityAnalysis.summary,
                 topOpportunities: viabilityAnalysis.topOpportunities,
               } : undefined,
+              projectGoal,
             }),
           }).then((r) => r.json()),
         ];
@@ -651,7 +694,7 @@ function LoadingContent() {
       await new Promise((r) => setTimeout(r, 1500));
       router.push(`/project/${pid}`);
     },
-    [updateProject, router, animateCode, addStepDetail]
+    [updateProject, router, animateCode, addStepDetail, getProject]
   );
 
   const runSellerFlow = useCallback(

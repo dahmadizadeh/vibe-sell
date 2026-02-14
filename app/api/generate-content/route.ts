@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
     audienceGroups,
     viabilityAnalysis,
     contacts,
+    projectGoal,
   } = (await req.json()) as {
     description: string;
     appName: string;
@@ -19,19 +20,21 @@ export async function POST(req: NextRequest) {
     audienceGroups: AudienceGroup[];
     viabilityAnalysis?: ViabilityAnalysis;
     contacts: Contact[];
+    projectGoal?: import("@/lib/types").ProjectGoal;
   };
 
   const errors: string[] = [];
 
   // Run posts and emails in parallel
   const [postsResult, emailsResult] = await Promise.allSettled([
-    generatePosts(description, appName, audienceGroups, viabilityAnalysis),
+    generatePosts(description, appName, audienceGroups, viabilityAnalysis, projectGoal),
     generateContextualEmails(
       contacts,
       audienceGroups,
       appName,
       description,
-      shareUrl
+      shareUrl,
+      projectGoal
     ),
   ]);
 
