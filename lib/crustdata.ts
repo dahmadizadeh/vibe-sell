@@ -12,6 +12,9 @@ interface CrustdataPersonRecord {
   headline?: string;
   region?: string;
   linkedin_profile_url?: string;
+  profile_photo_url?: string;
+  profile_pic_url?: string;
+  avatar_url?: string;
   current_employers?: Array<{
     title?: string;
     company_name?: string;
@@ -167,15 +170,31 @@ export async function searchCompany(
 }
 
 export interface CrustdataLinkedInPost {
-  author_name?: string;
-  author_title?: string;
-  author_company?: string;
-  author_linkedin_url?: string;
-  content?: string;
-  date?: string;
-  post_url?: string;
-  likes?: number;
-  comments?: number;
+  authorName: string;
+  authorTitle: string;
+  authorCompany: string;
+  authorLinkedinUrl: string;
+  authorPhotoUrl?: string;
+  content: string;
+  date: string;
+  postUrl?: string;
+  likes: number;
+  comments: number;
+}
+
+function mapRawPost(raw: Record<string, unknown>): CrustdataLinkedInPost {
+  return {
+    authorName: (raw.author_name || raw.name || raw.profile_name || raw.author?.toString() || "") as string,
+    authorTitle: (raw.author_title || raw.headline || raw.author_headline || "") as string,
+    authorCompany: (raw.author_company || raw.company || raw.author_company_name || "") as string,
+    authorLinkedinUrl: (raw.author_linkedin_url || raw.author_url || raw.linkedin_url || raw.profile_url || "") as string,
+    authorPhotoUrl: (raw.author_profile_photo || raw.profile_image_url || raw.author_avatar || raw.avatar_url || "") as string || undefined,
+    content: (raw.text || raw.content || raw.body || raw.post_text || raw.description || "") as string,
+    date: (raw.posted_at || raw.date || raw.created_at || raw.published_date || raw.post_date || "") as string,
+    postUrl: (raw.post_url || raw.url || raw.linkedin_url || raw.link || "") as string || undefined,
+    likes: (raw.reactions_count || raw.total_reactions || raw.likes || raw.num_likes || 0) as number,
+    comments: (raw.comments_count || raw.total_comments || raw.comments || raw.num_comments || 0) as number,
+  };
 }
 
 export async function searchLinkedInPosts(
@@ -204,7 +223,22 @@ export async function searchLinkedInPosts(
     }
 
     const data = await res.json();
-    return data.posts || data.results || data || [];
+    console.log("[crustdata] searchLinkedInPosts response keys:", Object.keys(data));
+
+    const rawPosts: Record<string, unknown>[] = data.posts || data.results || (Array.isArray(data) ? data : []);
+    if (rawPosts.length > 0) {
+      console.log("[crustdata] First raw post keys:", Object.keys(rawPosts[0]));
+      console.log("[crustdata] First raw post sample:", JSON.stringify(rawPosts[0], null, 2).slice(0, 500));
+    }
+
+    // Map to normalized format and filter out empty posts
+    const mapped = rawPosts.map(mapRawPost);
+    const valid = mapped.filter(
+      (p) => p.content && p.content.length > 20 && p.authorName && p.authorName !== "Unknown"
+    );
+
+    console.log("[crustdata] searchLinkedInPosts:", rawPosts.length, "raw ->", valid.length, "valid posts");
+    return valid;
   } finally {
     clearTimeout(timeout);
   }
@@ -214,28 +248,46 @@ export async function searchLinkedInPosts(
 
 export function mapPersonToContact(
   person: CrustdataPersonRecord,
-  index: number
+  index: number,
+  matchReasonTemplate?: string
 ): Contact | null {
   const employer = person.current_employers?.[0];
   if (!employer) return null;
 
   const name = person.name || "Unknown";
   const firstName = person.first_name || name.split(" ")[0] || "Unknown";
+  const title = employer.title || "Unknown Title";
+  const company = normalizeCompanyName(employer.company_name || employer.company_website_domain || "Unknown");
+  const headcount = employer.company_headcount_latest || 0;
+  const industry = employer.company_industries?.[0] || "Technology";
+  const photoUrl = person.profile_photo_url || person.profile_pic_url || person.avatar_url;
+
+  let matchReason: string;
+  if (matchReasonTemplate) {
+    matchReason = matchReasonTemplate
+      .replace(/\{title\}/g, title)
+      .replace(/\{company\}/g, company)
+      .replace(/\{headcount\}/g, headcount.toString())
+      .replace(/\{industry\}/g, industry);
+  } else {
+    matchReason = generateMatchReason(person);
+  }
 
   return {
     id: `cd-${index}-${Date.now()}`,
     name,
     firstName,
-    title: employer.title || "Unknown Title",
-    company: normalizeCompanyName(employer.company_name || employer.company_website_domain || "Unknown"),
-    companySize: employer.company_headcount_latest || 0,
-    industry: employer.company_industries?.[0] || "Technology",
+    title,
+    company,
+    companySize: headcount,
+    industry,
     department: employer.department,
-    roleTag: inferRoleTag(employer.title || "", employer.seniority_level || ""),
-    matchReason: generateMatchReason(person),
+    roleTag: inferRoleTag(title, employer.seniority_level || ""),
+    matchReason,
     relevance: "strong",
     linkedinUrl: person.linkedin_profile_url || "",
     email: employer.business_email || undefined,
+    profilePhotoUrl: photoUrl || undefined,
   };
 }
 

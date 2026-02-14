@@ -46,10 +46,10 @@ No markdown fences. No explanation. Just the JSON array.`,
     // Step 3: Use Claude to analyze posts and generate engagement strategies
     const postsForAnalysis = rawPosts.slice(0, 15).map((p, i) => ({
       idx: i,
-      author: p.author_name || "Unknown",
-      title: p.author_title || "",
-      company: p.author_company || "",
-      content: (p.content || "").slice(0, 500),
+      author: p.authorName,
+      title: p.authorTitle,
+      company: p.authorCompany,
+      content: p.content.slice(0, 500),
     }));
 
     const analysisRes = await client.messages.create({
@@ -86,18 +86,18 @@ No markdown fences. No explanation. Just the JSON array.`,
       suggestedComment: string;
     }> = JSON.parse(analysisText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim());
 
-    // Map to LinkedInPost objects
+    // Map to LinkedInPost objects (rawPosts already filtered for valid content)
     const posts: LinkedInPost[] = rawPosts.slice(0, 15).map((p, i) => {
       const analysis = analyses.find((a) => a.idx === i);
       return {
         id: `lp-${i}-${Date.now()}`,
-        authorName: p.author_name || "Unknown",
-        authorTitle: p.author_title || "",
-        authorCompany: p.author_company || "",
-        authorLinkedinUrl: p.author_linkedin_url || "",
-        postContent: p.content || "",
-        postDate: p.date || "",
-        postUrl: p.post_url,
+        authorName: p.authorName,
+        authorTitle: p.authorTitle,
+        authorCompany: p.authorCompany,
+        authorLinkedinUrl: p.authorLinkedinUrl,
+        postContent: p.content,
+        postDate: p.date,
+        postUrl: p.postUrl,
         likes: p.likes,
         comments: p.comments,
         whyRelevant: analysis?.whyRelevant || "Relevant to your product space",

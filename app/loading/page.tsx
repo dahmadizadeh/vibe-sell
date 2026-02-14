@@ -359,24 +359,48 @@ function LoadingContent() {
         for (const group of audienceGroups) {
           setStatusMessage(`Finding ${group.name}...`);
 
-          const groupTargeting: Targeting = {
-            industries: group.searchFilters.industries,
-            companySize: targeting?.companySize || { min: 50, max: 5000 },
-            titles: group.searchFilters.titles,
-            regions: group.searchFilters.regions,
-            summary: group.description,
-          };
+          // Prefer crustdataConditions (direct filter conditions from AI) over flat Targeting
+          const useDirectConditions = group.crustdataConditions && group.crustdataConditions.length > 0;
 
-          const cacheKey = `crustdata_contacts_builder_${hashString(JSON.stringify(groupTargeting))}`;
+          const cacheKey = useDirectConditions
+            ? `crustdata_contacts_v2_${hashString(JSON.stringify(group.crustdataConditions))}`
+            : `crustdata_contacts_builder_${hashString(JSON.stringify({
+                industries: group.searchFilters.industries,
+                titles: group.searchFilters.titles,
+                regions: group.searchFilters.regions,
+              }))}`;
+
           let contacts: Contact[] | null = getCachedContacts(cacheKey);
 
           if (!contacts) {
             try {
-              const res = await fetch("/api/find-customers", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ targeting: groupTargeting }),
-              });
+              let res: Response;
+              if (useDirectConditions) {
+                // Use raw Crustdata conditions with match reason template
+                res = await fetch("/api/find-people", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    conditions: group.crustdataConditions,
+                    limit: group.count,
+                    matchReasonTemplate: group.matchReasonTemplate,
+                  }),
+                });
+              } else {
+                // Fallback to Targeting-based search
+                const groupTargeting: Targeting = {
+                  industries: group.searchFilters.industries,
+                  companySize: targeting?.companySize || { min: 50, max: 5000 },
+                  titles: group.searchFilters.titles,
+                  regions: group.searchFilters.regions,
+                  summary: group.description,
+                };
+                res = await fetch("/api/find-customers", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ targeting: groupTargeting }),
+                });
+              }
               const result = await res.json();
               if (result.contacts && result.contacts.length > 0) {
                 contacts = result.contacts.slice(0, group.count);

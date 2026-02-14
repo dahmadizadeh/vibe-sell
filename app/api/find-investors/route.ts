@@ -15,96 +15,101 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    // Use Claude to generate investor-relevant search parameters
+    // Use Claude to generate investor-specific Crustdata conditions
     const aiRes = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 512,
+      max_tokens: 1024,
       messages: [
         {
           role: "user",
-          content: `You are a startup fundraising advisor. A founder built "${appName}" in the "${industry}" space: "${description}".
+          content: `You are a startup fundraising advisor. A founder built "${appName}" in "${industry}": "${description}".
 
-Generate search filters to find VCs, angels, and fund partners who invest in this space. Return ONLY valid JSON:
+Generate TWO investor search groups with Crustdata filter conditions:
+
+Group 1: "VCs in This Space"
+- Partners/principals at VC firms who invest in ${industry} or adjacent spaces
+- Use title filters for "Partner", "Principal", "Managing Director", "Investor"
+- Industry filter: "Venture Capital & Private Equity" (required)
+- Include seniority filter for senior roles
+
+Group 2: "Angels & Operators"
+- People who angel invest and have domain expertise in ${industry}
+- Former founders or executives who might angel invest
+- Use title filters like "Angel", "Advisor", "Board Member", "Founder" at investment-related firms
+- Industry filter should include both VC and ${industry}
+
+For each group, generate Crustdata conditions as arrays of filter objects.
+Available columns:
+- "current_employers.title" (type: "(.)" fuzzy)
+- "current_employers.company_industries" (type: "in" list match)
+- "current_employers.seniority_level" (type: "in") — values: "CXO", "Vice President", "Director", "Partner"
+- "region" (type: "(.)" fuzzy)
+
+For multiple titles use: { "op": "or", "conditions": [...] }
+
+Return ONLY valid JSON:
 {
-  "industries": ["Venture Capital & Private Equity", "${industry}"],
-  "regions": ["United States"]
+  "groups": [
+    {
+      "name": "VCs in This Space",
+      "conditions": [...crustdata filter conditions...],
+      "matchReasonTemplate": "{title} at {company} — invests in ${industry} startups",
+      "limit": 25
+    },
+    {
+      "name": "Angels & Operators",
+      "conditions": [...crustdata filter conditions...],
+      "matchReasonTemplate": "{title} at {company} — domain expertise in {industry}",
+      "limit": 25
+    }
+  ]
 }
 
-Keep industries to 2-3 items. No markdown fences. No explanation. Just the JSON.`,
+No markdown fences. No explanation. Just the JSON.`,
         },
       ],
     });
 
     const aiText = aiRes.content[0].type === "text" ? aiRes.content[0].text : "{}";
     const cleaned = aiText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-    const filters = JSON.parse(cleaned) as {
-      industries: string[];
-      regions: string[];
+    const parsed = JSON.parse(cleaned) as {
+      groups: Array<{
+        name: string;
+        conditions: Array<Record<string, unknown>>;
+        matchReasonTemplate: string;
+        limit: number;
+      }>;
     };
 
-    // Build Crustdata conditions for investor search
-    const conditions: Array<
-      | { column: string; type: string; value: string | string[] | number }
-      | { op: string; conditions: Array<{ column: string; type: string; value: string | string[] | number }> }
-    > = [];
+    console.log("[find-investors] AI generated", parsed.groups?.length, "investor groups");
 
-    // Investor titles
-    conditions.push({
-      op: "or",
-      conditions: [
-        { column: "current_employers.title", type: "(.)", value: "Venture Capital" },
-        { column: "current_employers.title", type: "(.)", value: "Angel Investor" },
-        { column: "current_employers.title", type: "(.)", value: "Partner" },
-        { column: "current_employers.title", type: "(.)", value: "Managing Director" },
-        { column: "current_employers.title", type: "(.)", value: "Principal" },
-      ],
-    });
+    // Search both groups in parallel
+    const allContacts: Contact[] = [];
+    const results = await Promise.allSettled(
+      (parsed.groups || []).map((group) =>
+        searchPeople(group.conditions as Parameters<typeof searchPeople>[0], group.limit || 25)
+      )
+    );
 
-    // Industries
-    if (filters.industries && filters.industries.length > 0) {
-      conditions.push({
-        column: "current_employers.company_industries",
-        type: "in",
-        value: filters.industries,
-      });
-    }
-
-    // Seniority
-    conditions.push({
-      column: "current_employers.seniority_level",
-      type: "in",
-      value: ["CXO", "Vice President", "Director", "Partner"],
-    });
-
-    // Regions
-    if (filters.regions && filters.regions.length > 0) {
-      if (filters.regions.length === 1) {
-        conditions.push({ column: "region", type: "(.)", value: filters.regions[0] });
+    results.forEach((result, i) => {
+      const group = parsed.groups[i];
+      if (result.status === "fulfilled") {
+        const contacts = result.value
+          .map((p, j) => mapPersonToContact(p, i * 100 + j, group.matchReasonTemplate))
+          .filter((c): c is Contact => c !== null)
+          .map((c) => ({
+            ...c,
+            roleTag: "decision_maker" as const,
+            contactCategory: "investors" as const,
+          }));
+        allContacts.push(...contacts);
+        console.log(`[find-investors] ${group.name}: found ${contacts.length} contacts`);
       } else {
-        conditions.push({
-          op: "or",
-          conditions: filters.regions.map((r) => ({
-            column: "region", type: "(.)" as const, value: r,
-          })),
-        });
+        console.error(`[find-investors] ${group.name} search failed:`, result.reason);
       }
-    }
+    });
 
-    console.log("[find-investors] Searching with conditions:", JSON.stringify(conditions, null, 2));
-
-    const people = await searchPeople(conditions, 50);
-    console.log("[find-investors] Found", people.length, "investor profiles");
-
-    const contacts = people
-      .map((p, i) => mapPersonToContact(p, i))
-      .filter((c): c is Contact => c !== null)
-      .map((c) => ({
-        ...c,
-        roleTag: "decision_maker" as const,
-        matchReason: `${c.title} at ${c.company} — invests in ${industry}`,
-      }));
-
-    return NextResponse.json({ contacts, dataSource: "live" });
+    return NextResponse.json({ contacts: allContacts, dataSource: "live" });
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));
     console.error("[find-investors] Error:", err.message);

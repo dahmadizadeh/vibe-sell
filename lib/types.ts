@@ -54,6 +54,8 @@ export interface Contact {
   relevance: RelevanceLevel;
   linkedinUrl: string;
   email?: string;
+  profilePhotoUrl?: string;
+  contactCategory?: 'users' | 'investors' | 'teammates';
 }
 
 export interface ProductPage {
@@ -135,6 +137,8 @@ export interface AudienceGroup {
     companies?: string[];
     regions: string[];
   };
+  crustdataConditions?: Array<Record<string, unknown>>;
+  matchReasonTemplate?: string;
   count: number;
   contacts?: Contact[];
 }

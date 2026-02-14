@@ -75,51 +75,66 @@ export async function generateSmartTargeting(
 }> {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 2048,
+    max_tokens: 3000,
     messages: [
       {
         role: "user",
-        content: `You are helping a founder find the right people to reach out to for their new product.
+        content: `You are generating search filters to find real people for a startup using the Crustdata person database.
 
-The idea: "${description}"
-App name: "${appName}"
+The product: "${appName}" — ${description}
 
-Think about WHO would be most useful for this founder to talk to right now. Not generic B2B buyers — the actual people relevant to THIS specific idea.
+Generate 3-4 audience groups of people who would be potential USERS, CUSTOMERS, or VALUABLE CONTACTS for this product.
 
-Generate 3-4 audience groups. Each group should have:
-- A name (e.g., "Early Adopters", "Domain Experts", "Potential Investors", "Community Leaders")
-- A description of why this group matters
-- Specific job titles, industries, and keywords to search for these people
-- A search strategy: what filters would find them
+For EACH group, generate Crustdata person search filter conditions. Available filter columns:
+- "current_employers.title" (type: "(.)" for fuzzy match) — job titles
+- "current_employers.company_name" (type: "(.)" for fuzzy match) — specific company names
+- "current_employers.company_industries" (type: "in" for list match) — industry list (use real LinkedIn industry names)
+- "current_employers.seniority_level" (type: "in") — values: "CXO", "Vice President", "Director", "Manager", "Senior", "Lead", "Entry"
+- "current_employers.company_headcount_latest" (type: "=>") — minimum headcount (number)
+- "current_employers.company_headcount_latest" (type: "=<") — maximum headcount (number)
+- "region" (type: "(.)" for fuzzy match) — geographic region
 
-For example, for a "Farsi dating app":
-- Group 1: "Farsi-Speaking Professionals" — young Farsi speakers in US/UK/Canada who might be early users
-- Group 2: "Dating App Veterans" — people who've worked at Hinge, Bumble, Tinder who could advise
-- Group 3: "Community Builders" — Farsi podcasters, content creators, community organizers
-- Group 4: "Social/Dating Investors" — VCs who've invested in dating or social apps
+To search for multiple titles, use an OR block:
+{ "op": "or", "conditions": [{ "column": "current_employers.title", "type": "(.)", "value": "founder" }, { "column": "current_employers.title", "type": "(.)", "value": "CEO" }] }
+
+CRITICAL RULES:
+1. Each group's filters must be DIFFERENT and SPECIFIC to that audience segment
+2. DO NOT use generic seniority-only filters — combine title + industry + company size
+3. If the product targets founders/startups, search for "founder" OR "co-founder" OR "CEO" at companies with headcount <= 50
+4. If the product targets a specific niche, use industry-specific titles and company names of competitors
+5. Use company name filters for well-known companies in the space when relevant
+6. The matchReasonTemplate must explain WHY this person matters for THIS product — use {title}, {company}, {headcount}, {industry} as placeholders
 
 Return ONLY valid JSON:
 {
   "targeting": {
-    "industries": ["array of all relevant industries across groups"],
+    "industries": ["all relevant industries combined"],
     "companySize": { "min": 1, "max": 10000 },
-    "titles": ["array of all relevant titles across groups"],
-    "regions": ["United States", "United Kingdom", "Canada"],
-    "summary": "A plain English description of who we're looking for"
+    "titles": ["all relevant titles combined"],
+    "regions": ["United States"],
+    "summary": "Plain English description of who we're looking for"
   },
   "audienceGroups": [
     {
-      "id": "early-adopters",
-      "name": "Early Adopters",
-      "description": "Why this group matters for this specific idea",
+      "id": "kebab-case-id",
+      "name": "Group Name",
+      "description": "Why these people matter for this specific product",
       "icon": "users",
       "searchFilters": {
-        "titles": ["specific titles to search"],
-        "industries": ["specific industries"],
-        "keywords": ["optional keywords"],
-        "companies": ["optional specific company names"],
+        "titles": ["title1", "title2"],
+        "industries": ["Industry Name"],
+        "companies": ["optional company names"],
         "regions": ["United States"]
       },
+      "crustdataConditions": [
+        { "op": "or", "conditions": [
+          { "column": "current_employers.title", "type": "(.)", "value": "specific title" },
+          { "column": "current_employers.title", "type": "(.)", "value": "another title" }
+        ]},
+        { "column": "current_employers.company_industries", "type": "in", "value": ["Specific Industry"] },
+        { "column": "current_employers.company_headcount_latest", "type": "=<", "value": 50 }
+      ],
+      "matchReasonTemplate": "{title} at {company} ({headcount} employees) — specific reason why they matter for ${appName}",
       "count": 25
     }
   ]

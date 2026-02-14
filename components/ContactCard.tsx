@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Linkedin, Mail, Check, Send } from "lucide-react";
 import { Button } from "./Button";
 import { COPY } from "@/lib/copy";
@@ -13,27 +14,28 @@ interface ContactCardProps {
   draftStatus?: DraftStatus;
 }
 
-function roleTagLabel(tag: Contact["roleTag"]): string {
-  switch (tag) {
-    case "decision_maker": return COPY.roleDecisionMaker;
-    case "champion": return COPY.roleChampion;
-    case "technical_evaluator": return COPY.roleTechnicalEvaluator;
-    default: return "";
-  }
-}
+function getContextBadge(contact: Contact): { label: string; color: string } {
+  const category = contact.contactCategory;
 
-function roleTagColor(tag: Contact["roleTag"]): string {
-  switch (tag) {
-    case "decision_maker": return "bg-role-decision text-white";
-    case "champion": return "bg-role-champion text-white";
-    case "technical_evaluator": return "bg-role-technical text-white";
-    default: return "bg-gray-500 text-white";
+  if (category === "investors") {
+    return { label: "Thesis Match", color: "bg-purple-100 text-purple-700" };
   }
-}
 
-function relevanceBadge(level: Contact["relevance"]): { label: string; color: string } {
-  if (level === "strong") return { label: COPY.contactStrongMatch, color: "bg-brand-success text-white" };
-  return { label: COPY.contactGoodMatch, color: "bg-brand-primary text-white" };
+  if (category === "teammates") {
+    if (contact.roleTag === "technical_evaluator") {
+      return { label: "Builder", color: "bg-orange-100 text-orange-700" };
+    }
+    return { label: "Grower", color: "bg-teal-100 text-teal-700" };
+  }
+
+  // Users/customers (default)
+  if (contact.companySize > 0 && contact.companySize <= 50) {
+    return { label: "Early Adopter", color: "bg-green-100 text-green-700" };
+  }
+  if (contact.relevance === "strong") {
+    return { label: "Strong Match", color: "bg-brand-success text-white" };
+  }
+  return { label: "Good Match", color: "bg-brand-primary text-white" };
 }
 
 function draftStatusBadge(status?: DraftStatus): { label: string; color: string; icon: typeof Check } | null {
@@ -43,16 +45,38 @@ function draftStatusBadge(status?: DraftStatus): { label: string; color: string;
 }
 
 export function ContactCard({ contact, index, onWriteEmail, draftStatus }: ContactCardProps) {
-  const badge = relevanceBadge(contact.relevance);
+  const badge = getContextBadge(contact);
   const dBadge = draftStatusBadge(draftStatus);
+  const [imgError, setImgError] = useState(false);
+
+  const initials = contact.name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <div
       className="border border-[#E2E8F0] rounded-lg p-4 mb-3 animate-slide-up hover:border-gray-300 transition-colors"
       style={{ animationDelay: staggerDelay(index) }}
     >
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="min-w-0">
+      <div className="flex items-start gap-3 mb-2">
+        {/* Profile photo */}
+        {contact.profilePhotoUrl && !imgError ? (
+          <img
+            src={contact.profilePhotoUrl}
+            alt={contact.name}
+            className="w-10 h-10 rounded-full object-cover shrink-0"
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+            <span className="text-blue-600 font-semibold text-sm">{initials}</span>
+          </div>
+        )}
+
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="font-semibold text-gray-900">{contact.name}</span>
             <a
@@ -78,15 +102,11 @@ export function ContactCard({ contact, index, onWriteEmail, draftStatus }: Conta
             {formatCompanySize(contact.companySize)} · {contact.industry}
           </p>
         </div>
+
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <span className={`text-xs px-2 py-0.5 rounded-full ${badge.color}`}>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badge.color}`}>
             {badge.label}
           </span>
-          {contact.roleTag && (
-            <span className={`text-xs px-2 py-0.5 rounded-full ${roleTagColor(contact.roleTag)}`}>
-              {roleTagLabel(contact.roleTag)}
-            </span>
-          )}
         </div>
       </div>
       <p className="text-sm text-gray-500 leading-relaxed mb-3">
