@@ -85,14 +85,25 @@ export async function generateApp(description: string): Promise<{
   features: string[];
   reactCode: string;
 }> {
+  const prompt = APP_PROMPT(description);
+  console.log("[ai/generateApp] Starting. model=claude-sonnet-4-20250514, max_tokens=16384, prompt_length=", prompt.length);
+
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 4096,
-    messages: [{ role: "user", content: APP_PROMPT(description) }],
+    max_tokens: 16384,
+    messages: [{ role: "user", content: prompt }],
   });
+
+  console.log("[ai/generateApp] Response received. stop_reason=", response.stop_reason, "usage=", JSON.stringify(response.usage));
+
+  if (response.stop_reason === "max_tokens") {
+    console.error("[ai/generateApp] WARNING: Response truncated due to max_tokens limit!");
+  }
 
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
+  console.log("[ai/generateApp] Response text length:", text.length);
+
   return parseAppResponse(text);
 }
 
@@ -103,18 +114,30 @@ export async function generateApp(description: string): Promise<{
 export async function* generateAppStream(
   description: string
 ): AsyncGenerator<string, void, unknown> {
+  const prompt = APP_PROMPT(description);
+  console.log("[ai/generateAppStream] Starting. model=claude-sonnet-4-20250514, max_tokens=16384, prompt_length=", prompt.length);
+
   const stream = client.messages.stream({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 4096,
-    messages: [{ role: "user", content: APP_PROMPT(description) }],
+    max_tokens: 16384,
+    messages: [{ role: "user", content: prompt }],
   });
 
+  let totalChars = 0;
   for await (const event of stream) {
     if (
       event.type === "content_block_delta" &&
       event.delta.type === "text_delta"
     ) {
+      totalChars += event.delta.text.length;
       yield event.delta.text;
+    }
+    if (event.type === "message_delta") {
+      const delta = event as unknown as { usage?: { output_tokens?: number }; delta?: { stop_reason?: string } };
+      console.log("[ai/generateAppStream] Stream done. stop_reason=", delta.delta?.stop_reason, "output_tokens=", delta.usage?.output_tokens, "total_chars=", totalChars);
+      if (delta.delta?.stop_reason === "max_tokens") {
+        console.error("[ai/generateAppStream] WARNING: Response truncated due to max_tokens limit!");
+      }
     }
   }
 }
@@ -129,7 +152,20 @@ export function parseAppResponse(text: string): {
     .replace(/```json\n?/g, "")
     .replace(/```\n?/g, "")
     .trim();
-  return JSON.parse(cleaned);
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    console.log("[ai/parseAppResponse] Parsed OK. name=", parsed.name, "reactCode length=", parsed.reactCode?.length || 0);
+    if (!parsed.reactCode) {
+      console.error("[ai/parseAppResponse] WARNING: No reactCode in response!");
+    }
+    return parsed;
+  } catch (err) {
+    console.error("[ai/parseAppResponse] JSON parse failed. Text length:", cleaned.length);
+    console.error("[ai/parseAppResponse] First 200 chars:", cleaned.slice(0, 200));
+    console.error("[ai/parseAppResponse] Last 200 chars:", cleaned.slice(-200));
+    throw err;
+  }
 }
 
 export async function generateTargeting(

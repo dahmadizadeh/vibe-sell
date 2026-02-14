@@ -51,6 +51,7 @@ type BuilderStep =
   | "app_ready"
   | "analyzing"
   | "targeting"
+  | "generating_landing"
   | "finding_customers"
   | "finding_network"
   | "creating_content"
@@ -60,6 +61,7 @@ function getBuilderSteps(source?: string): { key: string; label: string }[] {
   if (source === 'url') return [
     { key: "generating", label: "Analyze Product" },
     { key: "analyzing", label: "Analyze Viability" },
+    { key: "generating_landing", label: "Generate Landing Page" },
     { key: "finding_customers", label: "Find People" },
     { key: "finding_network", label: "LinkedIn Strategy" },
     { key: "creating_content", label: "Go-to-Market" },
@@ -67,14 +69,15 @@ function getBuilderSteps(source?: string): { key: string; label: string }[] {
   ];
   if (source === 'description') return [
     { key: "analyzing", label: "Analyze Viability" },
+    { key: "generating_landing", label: "Generate Landing Page" },
     { key: "finding_customers", label: "Find People" },
     { key: "finding_network", label: "LinkedIn Strategy" },
     { key: "creating_content", label: "Go-to-Market" },
     { key: "complete", label: "Done" },
   ];
   return [
-    { key: "generating", label: "Build App" },
     { key: "analyzing", label: "Analyze Viability" },
+    { key: "generating_landing", label: "Generate Landing Page" },
     { key: "finding_customers", label: "Find People" },
     { key: "finding_network", label: "LinkedIn Strategy" },
     { key: "creating_content", label: "Go-to-Market" },
@@ -94,11 +97,12 @@ function LoadingContent() {
   // Builder UI state
   const [streamedCode, setStreamedCode] = useState("");
   const [genStatus, setGenStatus] = useState<BuilderStep>("generating");
-  const [statusMessage, setStatusMessage] = useState("Building your app...");
+  const [statusMessage, setStatusMessage] = useState("Analyzing your idea...");
   const [appName, setAppName] = useState<string>();
   const [appTagline, setAppTagline] = useState<string>();
   const [reactCode, setReactCode] = useState<string>();
   const [stepDetails, setStepDetails] = useState<string[]>([]);
+  const [landingPageCode, setLandingPageCode] = useState<string>();
 
   useEffect(() => {
     hydrate();
@@ -128,15 +132,16 @@ function LoadingContent() {
 
   // Show progressive placeholder while API is pending
   useEffect(() => {
-    if (genStatus !== "generating" || reactCode || project?.source === 'url' || project?.source === 'description') return;
+    if ((genStatus !== "generating" && genStatus !== "analyzing" && genStatus !== "generating_landing") || landingPageCode || project?.source === 'url' || project?.source === 'description') return;
     const lines = [
       "// Analyzing your idea...",
-      "// Setting up React component...",
+      "// Evaluating business viability...",
       "",
       "function App() {",
-      "  const [data, setData] = React.useState(null);",
+      "  // Generating landing page...",
+      "  const [email, setEmail] = React.useState('');",
       "",
-      "  // Building UI components...",
+      "  // Building hero, value props, waitlist...",
     ];
     let lineIdx = 0;
     let charIdx = 0;
@@ -157,7 +162,7 @@ function LoadingContent() {
       }
     }, 40);
     return () => clearInterval(interval);
-  }, [genStatus, reactCode, project?.source]);
+  }, [genStatus, landingPageCode, project?.source]);
 
   const runBuilderFlow = useCallback(
     async (pid: string, description: string, source?: string, externalAppUrl?: string) => {
@@ -214,128 +219,9 @@ function LoadingContent() {
       } else if (source === 'description') {
         // Description-only: skip Step 1 entirely
       } else {
-        // Default idea flow: stream app generation
-        setGenStatus("generating");
-        setStatusMessage("Building your app...");
-
-        let streamSuccess = false;
-        try {
-          console.log("[loading] Starting stream-app fetch...");
-          const res = await fetch("/api/stream-app", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ description }),
-          });
-
-          console.log("[loading] stream-app response status:", res.status);
-
-          if (res.ok && res.body) {
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let accumulated = "";
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              const chunk = decoder.decode(value, { stream: true });
-              accumulated += chunk;
-              setStreamedCode(accumulated);
-            }
-
-            console.log("[loading] stream-app accumulated length:", accumulated.length);
-
-            // Check for stream error sentinel
-            if (accumulated.includes("__STREAM_ERROR__:")) {
-              const errMsg = accumulated.split("__STREAM_ERROR__:")[1];
-              console.error("[loading] stream-app returned error:", errMsg);
-              addStepDetail(`Stream error: ${errMsg?.slice(0, 100)}`);
-            } else {
-              // Parse the complete response
-              try {
-                const cleaned = accumulated.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-                const parsed = JSON.parse(cleaned);
-                productPage = {
-                  name: parsed.name,
-                  tagline: parsed.tagline,
-                  features: parsed.features,
-                  shareUrl: `/p/${generateSlug(parsed.name)}`,
-                  reactCode: parsed.reactCode,
-                };
-
-                setAppName(productPage.name);
-                setAppTagline(productPage.tagline);
-                setGenStatus("app_ready");
-                setStatusMessage(`${productPage.name} built!`);
-                addStepDetail(`Generated "${productPage.name}" \u2014 ${productPage.tagline}`);
-                setReactCode(productPage.reactCode);
-                streamSuccess = true;
-
-                await new Promise((r) => setTimeout(r, 2000));
-              } catch (parseErr) {
-                console.error("[loading] stream-app parse failed:", parseErr);
-                console.error("[loading] First 300 chars:", accumulated.slice(0, 300));
-                console.error("[loading] Last 300 chars:", accumulated.slice(-300));
-                addStepDetail("App response was malformed \u2014 trying fallback...");
-              }
-            }
-          } else {
-            console.error("[loading] stream-app not ok. Status:", res.status, "Body:", res.body ? "exists" : "null");
-            addStepDetail(`Stream failed (HTTP ${res.status}) \u2014 trying fallback...`);
-          }
-        } catch (err) {
-          console.error("[loading] stream-app fetch failed:", err);
-          addStepDetail("Stream connection failed \u2014 trying fallback...");
-        }
-
-        // Fallback to non-streaming if streaming failed
-        if (!streamSuccess) {
-          console.log("[loading] Streaming failed, trying analyze-idea fallback...");
-          try {
-            const res = await fetch("/api/analyze-idea", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ description }),
-            });
-
-            console.log("[loading] analyze-idea response status:", res.status);
-
-            if (!res.ok) {
-              const errorBody = await res.json().catch(() => ({}));
-              console.error("[loading] analyze-idea failed:", res.status, errorBody);
-              addStepDetail(`App generation failed (${(errorBody as Record<string, string>)?._error || `HTTP ${res.status}`}) \u2014 continuing with analysis...`);
-            } else {
-              const result = await res.json();
-              if (result.error) {
-                console.error("[loading] analyze-idea returned error:", result._error);
-                addStepDetail(`App generation error: ${result._error?.slice(0, 100)}`);
-              } else if (result.productPage?.reactCode) {
-                productPage = result.productPage;
-                targeting = result.targeting || targeting;
-                setAppName(productPage!.name);
-                setAppTagline(productPage!.tagline);
-                setGenStatus("app_ready");
-                setStatusMessage(`${productPage!.name} built!`);
-                addStepDetail(`Generated "${productPage!.name}" \u2014 ${productPage!.tagline}`);
-                animateCode(productPage!.reactCode!);
-                setReactCode(productPage!.reactCode);
-                await new Promise((r) => setTimeout(r, 2000));
-              } else if (result.productPage) {
-                console.warn("[loading] analyze-idea returned productPage with no reactCode:", Object.keys(result.productPage));
-                productPage = result.productPage;
-                targeting = result.targeting || targeting;
-                setAppName(productPage!.name);
-                addStepDetail(`Got app metadata but no code \u2014 continuing with analysis...`);
-              } else {
-                console.error("[loading] analyze-idea returned unexpected shape:", Object.keys(result));
-                addStepDetail("Unexpected response from app generator \u2014 continuing...");
-              }
-            }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error("[loading] analyze-idea fetch failed:", msg);
-            addStepDetail(`App generation failed: ${msg.slice(0, 80)}`);
-          }
-        }
+        // Default idea flow: skip straight to viability (landing page generated after)
+        setGenStatus("analyzing");
+        setStatusMessage("Analyzing your idea...");
       }
 
       // Read project goal
@@ -385,6 +271,140 @@ function LoadingContent() {
         console.error("analyze-viability fetch failed:", err);
       }
 
+      // ── Step 2.5: Generate landing page with full context ─────────
+      setGenStatus("generating_landing");
+      setStatusMessage("Generating landing page...");
+
+      // Derive appName from viability/importedAnalysis if not already set
+      const currentProjectForLanding = getProject(pid);
+      const landingAppName = productPage?.name || currentProjectForLanding?.importedAnalysis?.name || "My App";
+      const landingTagline = productPage?.tagline || currentProjectForLanding?.importedAnalysis?.tagline || "";
+      const landingFeatures = productPage?.features || currentProjectForLanding?.importedAnalysis?.features || [];
+      const importedAnalysis = currentProjectForLanding?.importedAnalysis;
+
+      if (!appName && landingAppName !== "My App") {
+        setAppName(landingAppName);
+        setAppTagline(landingTagline);
+      }
+
+      const landingContext = {
+        description: enrichedDescription,
+        appName: landingAppName,
+        tagline: landingTagline,
+        features: landingFeatures,
+        targetUser: importedAnalysis?.targetUser,
+        problemSolved: importedAnalysis?.problemSolved,
+        industry: importedAnalysis?.industry,
+        competitors: viabilityAnalysis?.dimensions?.competition?.competitors?.map((c) => c.name) || importedAnalysis?.competitors,
+        viabilityScore: viabilityAnalysis?.overallScore,
+        viabilitySummary: viabilityAnalysis?.summary,
+        topOpportunities: viabilityAnalysis?.topOpportunities,
+        projectGoal: projectGoal || undefined,
+        founders: currentProjectForLanding?.founders?.map((f) => ({ name: f.name, headline: f.headline })),
+      };
+
+      let v0Code: string | undefined;
+
+      try {
+        console.log("[loading] Starting stream-landing fetch...");
+        const landingRes = await fetch("/api/stream-landing", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: enrichedDescription, context: landingContext }),
+        });
+
+        if (landingRes.ok && landingRes.body) {
+          const reader = landingRes.body.getReader();
+          const decoder = new TextDecoder();
+          let accumulated = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            accumulated += chunk;
+            setStreamedCode(accumulated);
+          }
+
+          console.log("[loading] stream-landing accumulated length:", accumulated.length);
+
+          if (accumulated.includes("__STREAM_ERROR__:")) {
+            const errMsg = accumulated.split("__STREAM_ERROR__:")[1];
+            console.error("[loading] stream-landing returned error:", errMsg);
+            addStepDetail(`Landing page error: ${errMsg?.slice(0, 100)}`);
+          } else {
+            try {
+              const cleaned = accumulated.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+              const parsed = JSON.parse(cleaned);
+              v0Code = parsed.code;
+
+              // Create productPage from v0 response + viability data
+              if (!productPage) {
+                productPage = {
+                  name: parsed.name || landingAppName,
+                  tagline: parsed.tagline || landingTagline,
+                  features: parsed.features || landingFeatures,
+                  shareUrl: `/p/${generateSlug(parsed.name || landingAppName)}`,
+                };
+              }
+
+              setAppName(productPage.name);
+              setAppTagline(productPage.tagline);
+              setReactCode(v0Code);
+              setLandingPageCode(v0Code);
+              addStepDetail(`Generated landing page for "${productPage.name}"`);
+            } catch (parseErr) {
+              console.error("[loading] stream-landing parse failed:", parseErr);
+              addStepDetail("Landing page response was malformed \u2014 continuing...");
+            }
+          }
+        } else {
+          console.error("[loading] stream-landing not ok. Status:", landingRes.status);
+          addStepDetail(`Landing page stream failed (HTTP ${landingRes.status})`);
+        }
+      } catch (err) {
+        console.error("[loading] stream-landing fetch failed:", err);
+        addStepDetail("Landing page generation failed \u2014 continuing...");
+      }
+
+      // Fallback to non-streaming if streaming failed
+      if (!v0Code) {
+        console.log("[loading] Landing page streaming failed, trying non-streaming fallback...");
+        try {
+          const res = await fetch("/api/generate-landing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ description: enrichedDescription, appName: landingAppName, context: landingContext }),
+          });
+
+          if (res.ok) {
+            const result = await res.json();
+            if (result.code) {
+              v0Code = result.code;
+              if (!productPage) {
+                productPage = {
+                  name: result.name || landingAppName,
+                  tagline: result.tagline || landingTagline,
+                  features: result.features || landingFeatures,
+                  shareUrl: `/p/${generateSlug(result.name || landingAppName)}`,
+                };
+              }
+              setAppName(productPage.name);
+              setAppTagline(productPage.tagline);
+              setReactCode(v0Code);
+              setLandingPageCode(v0Code);
+              animateCode(v0Code!);
+              addStepDetail(`Generated landing page for "${productPage.name}"`);
+            }
+          } else {
+            addStepDetail("Landing page fallback also failed \u2014 continuing...");
+          }
+        } catch (err) {
+          console.error("[loading] generate-landing fallback failed:", err);
+          addStepDetail("Landing page generation failed \u2014 continuing...");
+        }
+      }
+
       // ── Step 3: Find real people per audience group ────────────────
       setGenStatus("finding_customers");
       setStatusMessage("Searching 700M+ professionals...");
@@ -423,6 +443,7 @@ function LoadingContent() {
                     matchReasonTemplate: group.matchReasonTemplate,
                     appName: productPage?.name || "My App",
                     description: enrichedDescription,
+                    projectGoal,
                   }),
                 });
               } else {
@@ -519,10 +540,11 @@ function LoadingContent() {
         description: enrichedDescription,
         appName: productPage?.name || "My App",
         industry: targeting?.industries?.[0] || "Technology",
+        projectGoal,
       };
 
-      // Build competitor posts search alongside other network searches
-      const competitorKeywords = competitors.length > 0 ? competitors.slice(0, 5) : [];
+      // Build competitor posts search alongside other network searches — no longer limited to 5
+      const competitorKeywords = competitors.length > 0 ? competitors : [];
 
       const networkPromises: Promise<unknown>[] = [
         // Skip investors for side_project
@@ -688,6 +710,7 @@ function LoadingContent() {
       if (detectedCompetitors.length > 0) projectUpdate.detectedCompetitors = detectedCompetitors;
       if (playbooks) projectUpdate.playbooks = playbooks;
       if (seoAudit) projectUpdate.seoAudit = seoAudit;
+      if (v0Code) projectUpdate.landingPageCode = v0Code;
 
       updateProject(pid, projectUpdate as Partial<import("@/lib/types").Project>);
 

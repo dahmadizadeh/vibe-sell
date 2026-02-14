@@ -5,8 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { Card } from "@/components/Card";
 import { ContactList } from "@/components/ContactList";
 import { TargetingEditor } from "@/components/TargetingEditor";
-import { ProductPagePreview } from "@/components/ProductPagePreview";
-import { AppPreview } from "@/components/AppPreview";
+import { LandingPagePreview } from "@/components/LandingPagePreview";
+import { AppBuilder } from "@/components/AppBuilder";
 import { ViabilityScore } from "@/components/ViabilityScore";
 import { PitchPagePreview } from "@/components/PitchPagePreview";
 import { CompanyTabs } from "@/components/CompanyTabs";
@@ -18,8 +18,85 @@ import { CompetitorPills } from "@/components/CompetitorPills";
 import { CompanyCard } from "@/components/CompanyCard";
 import { FounderCard } from "@/components/FounderCard";
 import { ConversationsTab } from "@/components/ConversationsTab";
-import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage, PostTemplate, Conversation, LinkedInPost, ProjectGoal } from "@/lib/types";
+import type { Contact, EmailDraft, Targeting, PitchPage, PostTemplate, Conversation, LinkedInPost, ProjectGoal } from "@/lib/types";
 import { generateId } from "@/lib/utils";
+
+function buildDeployHtml(code: string): string {
+  // Strip imports/exports
+  let cleaned = code;
+  cleaned = cleaned.replace(/^import\s+.*?[\r\n]+/gm, "");
+  cleaned = cleaned.replace(/export\s+default\s+function\s+/g, "function ");
+  cleaned = cleaned.replace(/export\s+default\s+\w+\s*;?\s*$/gm, "");
+  cleaned = cleaned.replace(/export\s+function\s+/g, "function ");
+  cleaned = cleaned.replace(/export\s+const\s+/g, "const ");
+  cleaned = cleaned.replace(/^export\s+/gm, "");
+
+  const escaped = cleaned.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Landing Page</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin><\/script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin><\/script>
+  <script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js" crossorigin><\/script>
+  <script>
+    function Button(props) {
+      var variant = props.variant || 'default';
+      var baseClass = 'inline-flex items-center justify-center rounded-md font-medium transition-colors';
+      var cls = variant === 'outline' ? 'border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 text-sm' : 'bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 text-sm';
+      return React.createElement('button', Object.assign({}, props, { className: (baseClass + ' ' + cls + ' ' + (props.className || '')).trim() }), props.children);
+    }
+    function Input(props) {
+      return React.createElement('input', Object.assign({ className: 'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ' + (props.className || '') }, props));
+    }
+
+    function waitForDeps() {
+      return new Promise(function(resolve) {
+        function check() {
+          if (typeof React !== 'undefined' && typeof ReactDOM !== 'undefined' && typeof Babel !== 'undefined') resolve();
+          else setTimeout(check, 50);
+        }
+        check();
+      });
+    }
+
+    async function main() {
+      await waitForDeps();
+      var rawCode = \\\`${escaped}\\\`;
+      try {
+        var transpiled = Babel.transform(rawCode, { presets: ['react'], filename: 'App.jsx' }).code;
+        var moduleExports = {};
+        var wrappedCode = '(function(React, exports, Button, Input) {' +
+          'var {useState, useEffect, useRef, useCallback, useMemo} = React;\\n' +
+          transpiled + '\\n' +
+          'if (typeof App !== "undefined") exports.default = App;\\n' +
+          '})';
+        eval(wrappedCode)(React, moduleExports, Button, Input);
+        var AppComponent = moduleExports.default;
+        if (AppComponent) {
+          ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AppComponent));
+        }
+      } catch(e) {
+        document.getElementById('root').innerHTML = '<div style="padding:20px;color:red">Error: ' + e.message + '</div>';
+      }
+    }
+    main();
+  <\/script>
+</body>
+</html>`;
+}
 
 function LinkedInPostCard({ post }: { post: LinkedInPost }) {
   const [expanded, setExpanded] = useState(false);
@@ -139,15 +216,13 @@ export default function ProjectPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { getProject, updateProject, setContacts, setTargeting, setProductPage, setPitchPages, updateEmailDraft, markDraftStatus, addConversation, updatePMFScore, hydrate } = useAppStore();
+  const { getProject, updateProject, setContacts, setTargeting, setPitchPages, updateEmailDraft, markDraftStatus, addConversation, updatePMFScore, hydrate } = useAppStore();
   const [hydrated, setHydrated] = useState(false);
   const [activeCompany, setActiveCompany] = useState("");
   const [composerContactId, setComposerContactId] = useState<string | null>(null);
   const [activeAudienceGroup, setActiveAudienceGroup] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"app" | "people" | "conversations" | "content">("app");
   const [peopleSubTab, setPeopleSubTab] = useState<"customers" | "investors" | "teammates" | "linkedin">("customers");
-  const [showAddUrl, setShowAddUrl] = useState(false);
-  const [addUrlValue, setAddUrlValue] = useState("");
   const [linkedInSubTab, setLinkedInSubTab] = useState<"relevant" | "competitors">("relevant");
   const [editingCompetitors, setEditingCompetitors] = useState(false);
   const [seoLoading, setSeoLoading] = useState(false);
@@ -161,6 +236,11 @@ export default function ProjectPage() {
   const [founderUrl, setFounderUrl] = useState("");
   const [addingFounder, setAddingFounder] = useState(false);
   const [analyzingFounders, setAnalyzingFounders] = useState(false);
+  const [regeneratingLanding, setRegeneratingLanding] = useState(false);
+  const [showDeployModal, setShowDeployModal] = useState(false);
+  const [generatingLanding, setGeneratingLanding] = useState(false);
+  const [landingError, setLandingError] = useState<string | null>(null);
+  const [rerunningGoal, setRerunningGoal] = useState(false);
 
   useEffect(() => {
     hydrate();
@@ -233,9 +313,7 @@ export default function ProjectPage() {
     // TODO: Re-fetch contacts based on updated targeting
   }, []);
 
-  const handleProductPageUpdate = useCallback((page: ProductPage) => {
-    if (project) setProductPage(project.id, page);
-  }, [project, setProductPage]);
+
 
   const handlePitchPageUpdate = useCallback((page: PitchPage) => {
     if (!project?.pitchPages) return;
@@ -348,6 +426,7 @@ export default function ProjectPage() {
             appName: project.productPage?.name || project.title,
             industry: project.targeting?.industries?.[0] || "Technology",
             competitors: updated,
+            projectGoal: project.projectGoal,
           }),
         });
         const result = await res.json();
@@ -427,7 +506,7 @@ export default function ProjectPage() {
         {/* Tab 1: Your App */}
         {activeTab === "app" && (
           <>
-            {/* External URL iframe */}
+            {/* 1. External URL iframe */}
             {project.externalAppUrl && (
               <Card className="p-0 mb-6 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
@@ -458,132 +537,226 @@ export default function ProjectPage() {
               </Card>
             )}
 
-            {/* Generated React code (no external URL) */}
-            {!project.externalAppUrl && project.productPage?.reactCode && (
-              <Card className="p-0 mb-6 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                  <div>
-                    <span className="font-semibold text-gray-900">
-                      {project.productPage.name}
-                    </span>
-                    <span className="text-gray-400 text-sm ml-2">
-                      {project.productPage.tagline}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => window.open(project.productPage!.shareUrl, "_blank")}
-                      className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
-                    >
-                      Open Full Screen
-                    </button>
-                    <button
-                      onClick={() => {
-                        const url = `${window.location.origin}${project.productPage!.shareUrl}`;
-                        navigator.clipboard.writeText(url);
-                      }}
-                      className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                    >
-                      Copy Link
-                    </button>
-                  </div>
-                </div>
-                <AppPreview code={project.productPage.reactCode} height="400px" />
-              </Card>
+            {/* 2. App Builder (shown when no external URL) */}
+            {!project.externalAppUrl && (
+              <AppBuilder
+                projectId={id}
+                appCode={project.appCode}
+                description={project.description}
+                appName={project.productPage?.name || project.title}
+                features={project.productPage?.features}
+                targetUser={project.importedAnalysis?.targetUser}
+                industry={project.importedAnalysis?.industry}
+                projectGoal={project.projectGoal}
+                appEditHistory={project.appEditHistory}
+                onUpdate={(fields) => updateProject(id, fields)}
+              />
             )}
 
-            {/* Description only (no URL, no reactCode) */}
-            {project.source === 'description' && !project.externalAppUrl && !project.productPage?.reactCode && (
-              <Card className="p-6 mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  {project.productPage?.name || project.title}
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">{project.description}</p>
-                {!showAddUrl ? (
-                  <button
-                    onClick={() => setShowAddUrl(true)}
-                    className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
-                  >
-                    Add URL
-                  </button>
-                ) : (
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={addUrlValue}
-                      onChange={(e) => setAddUrlValue(e.target.value)}
-                      placeholder="https://my-app.lovable.app"
-                      className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary"
-                    />
-                    <button
-                      onClick={() => {
-                        if (addUrlValue.trim()) {
-                          updateProject(id, { externalAppUrl: addUrlValue.trim(), source: 'url' });
-                          setShowAddUrl(false);
-                        }
-                      }}
-                      className="px-3 py-1.5 text-xs font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors"
-                    >
-                      Save
-                    </button>
+            {/* 3. Landing Page Section (below app) */}
+            {project.landingPageCode && (
+              <div className="mt-8">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Landing Page</h3>
+                <Card className="p-0 mb-4 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                    <div>
+                      <span className="font-semibold text-gray-900">
+                        {project.productPage?.name || project.title}
+                      </span>
+                      {project.productPage?.tagline && (
+                        <span className="text-gray-400 text-sm ml-2">
+                          {project.productPage.tagline}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          setRegeneratingLanding(true);
+                          setLandingError(null);
+                          try {
+                            const res = await fetch("/api/generate-landing", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                description: project.description,
+                                appName: project.productPage?.name || project.title,
+                                context: {
+                                  description: project.description,
+                                  appName: project.productPage?.name,
+                                  tagline: project.productPage?.tagline,
+                                  features: project.productPage?.features,
+                                  targetUser: project.importedAnalysis?.targetUser,
+                                  problemSolved: project.importedAnalysis?.problemSolved,
+                                  industry: project.importedAnalysis?.industry,
+                                  competitors: project.detectedCompetitors || project.importedAnalysis?.competitors,
+                                  viabilityScore: project.viabilityAnalysis?.overallScore,
+                                  viabilitySummary: project.viabilityAnalysis?.summary,
+                                  topOpportunities: project.viabilityAnalysis?.topOpportunities,
+                                  projectGoal: project.projectGoal,
+                                  founders: project.founders?.map((f) => ({ name: f.name, headline: f.headline })),
+                                },
+                              }),
+                            });
+                            const result = await res.json();
+                            if (result.code) {
+                              updateProject(id, { landingPageCode: result.code });
+                            } else if (result.error) {
+                              setLandingError(result.error);
+                            }
+                          } catch (err) {
+                            setLandingError(err instanceof Error ? err.message : "Regeneration failed");
+                          } finally {
+                            setRegeneratingLanding(false);
+                          }
+                        }}
+                        disabled={regeneratingLanding}
+                        className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors disabled:opacity-50"
+                      >
+                        {regeneratingLanding ? (
+                          <span className="flex items-center gap-1.5">
+                            <span className="w-3 h-3 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+                            Regenerating...
+                          </span>
+                        ) : "Regenerate"}
+                      </button>
+                    </div>
+                  </div>
+                  <LandingPagePreview code={project.landingPageCode} height="600px" />
+                </Card>
+                {landingError && (
+                  <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-sm mb-4">
+                    {landingError}
                   </div>
                 )}
-              </Card>
-            )}
-
-            {/* Fallback: productPage exists but no reactCode, no external URL, not description source */}
-            {project.source !== 'description' && !project.externalAppUrl && project.productPage && !project.productPage.reactCode && (
-              <Card className="p-6 mb-6">
-                <div className="text-center py-8">
-                  <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    App preview unavailable
-                  </h3>
-                  <p className="text-sm text-gray-500 mb-4 max-w-md mx-auto">
-                    The AI generated app metadata but the code was truncated or couldn&apos;t be parsed. Your business analysis and contacts are still available.
-                  </p>
-                  <div className="flex gap-3 justify-center">
+                <Card className="p-4 mb-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">Deploy Landing Page</h3>
+                      <p className="text-xs text-gray-500">Get a standalone HTML file you can host anywhere</p>
+                    </div>
                     <button
-                      onClick={() => {
-                        const desc = project.description;
-                        router.push(`/loading?description=${encodeURIComponent(desc)}&source=idea`);
-                      }}
+                      onClick={() => setShowDeployModal(true)}
                       className="px-4 py-2 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors"
                     >
-                      Retry App Generation
+                      Deploy Landing Page
                     </button>
                   </div>
-                  <div className="mt-4">
-                    <ProductPagePreview
-                      page={project.productPage}
-                      onUpdate={handleProductPageUpdate}
-                    />
-                  </div>
-                </div>
-              </Card>
+                </Card>
+              </div>
             )}
 
-            {!project.productPage && !project.externalAppUrl && project.source !== 'description' && (
+            {/* 4. Generate Landing Page (if none exists yet, non-external-url projects) */}
+            {!project.landingPageCode && !project.externalAppUrl && (
               <Card className="p-6 mb-6">
                 <div className="text-center py-8">
-                  <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
+                  <div className="text-4xl mb-4">{"\u{1F3A8}"}</div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    App generation failed
+                    No landing page yet
                   </h3>
                   <p className="text-sm text-gray-500 max-w-md mx-auto mb-4">
-                    The AI couldn&apos;t generate the app preview. This usually means the API timed out or returned an error. Your business analysis and contacts are still available.
+                    {landingError || "Generate a beautiful landing page for your product with AI."}
                   </p>
                   <button
-                    onClick={() => {
-                      const desc = project.description;
-                      router.push(`/loading?description=${encodeURIComponent(desc)}&source=idea`);
+                    onClick={async () => {
+                      setGeneratingLanding(true);
+                      setLandingError(null);
+                      try {
+                        const res = await fetch("/api/generate-landing", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            description: project.description,
+                            appName: project.productPage?.name || project.title,
+                            context: {
+                              description: project.description,
+                              appName: project.productPage?.name,
+                              tagline: project.productPage?.tagline,
+                              features: project.productPage?.features,
+                              targetUser: project.importedAnalysis?.targetUser,
+                              problemSolved: project.importedAnalysis?.problemSolved,
+                              industry: project.importedAnalysis?.industry,
+                              competitors: project.detectedCompetitors || project.importedAnalysis?.competitors,
+                              viabilityScore: project.viabilityAnalysis?.overallScore,
+                              viabilitySummary: project.viabilityAnalysis?.summary,
+                              topOpportunities: project.viabilityAnalysis?.topOpportunities,
+                              projectGoal: project.projectGoal,
+                              founders: project.founders?.map((f) => ({ name: f.name, headline: f.headline })),
+                            },
+                          }),
+                        });
+                        const result = await res.json();
+                        if (result.code) {
+                          updateProject(id, { landingPageCode: result.code });
+                        } else if (result.error) {
+                          setLandingError(result.error);
+                        }
+                      } catch (err) {
+                        setLandingError(err instanceof Error ? err.message : "Generation failed");
+                      } finally {
+                        setGeneratingLanding(false);
+                      }
                     }}
-                    className="px-4 py-2 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors"
+                    disabled={generatingLanding}
+                    className="px-4 py-2 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
                   >
-                    Retry App Generation
+                    {generatingLanding ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Generating Landing Page...
+                      </span>
+                    ) : "Generate Landing Page"}
                   </button>
                 </div>
               </Card>
+            )}
+
+            {/* Deploy Modal */}
+            {showDeployModal && project.landingPageCode && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowDeployModal(false)}>
+                <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                    <h2 className="text-lg font-semibold text-gray-900">Deploy Landing Page</h2>
+                    <button onClick={() => setShowDeployModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                  </div>
+                  <div className="p-6 overflow-y-auto flex-1">
+                    <p className="text-sm text-gray-600 mb-4">
+                      Your landing page is a standalone HTML file. Copy the HTML or download it to host anywhere (Netlify, Vercel, GitHub Pages, etc).
+                    </p>
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4 max-h-60 overflow-y-auto">
+                      <pre className="text-xs text-gray-700 whitespace-pre-wrap break-all font-mono">
+                        {buildDeployHtml(project.landingPageCode).slice(0, 2000)}
+                        {buildDeployHtml(project.landingPageCode).length > 2000 ? "\n\n... (truncated preview)" : ""}
+                      </pre>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(buildDeployHtml(project.landingPageCode!));
+                        }}
+                        className="flex-1 px-4 py-2.5 text-sm font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
+                      >
+                        Copy HTML
+                      </button>
+                      <button
+                        onClick={() => {
+                          const html = buildDeployHtml(project.landingPageCode!);
+                          const blob = new Blob([html], { type: "text/html" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = "landing-page.html";
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors"
+                      >
+                        Download as HTML
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Goal Selector */}
@@ -598,17 +771,74 @@ export default function ProjectPage() {
                   ]).map((g) => (
                     <button
                       key={g.key}
-                      onClick={() => updateProject(id, { projectGoal: g.key })}
+                      disabled={rerunningGoal}
+                      onClick={async () => {
+                        if (project.projectGoal === g.key) return;
+                        updateProject(id, { projectGoal: g.key });
+                        setRerunningGoal(true);
+                        try {
+                          // Re-run viability analysis with new goal
+                          const viabilityRes = await fetch("/api/analyze-viability", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              description: project.description,
+                              appName: project.productPage?.name || project.title,
+                              projectGoal: g.key,
+                            }),
+                          });
+                          const viabilityResult = await viabilityRes.json();
+                          const updates: Record<string, unknown> = {};
+                          if (viabilityResult.viabilityAnalysis) {
+                            updates.viabilityAnalysis = viabilityResult.viabilityAnalysis;
+                          }
+                          if (viabilityResult.smartTargeting?.audienceGroups) {
+                            updates.audienceGroups = viabilityResult.smartTargeting.audienceGroups;
+                          }
+
+                          // Re-run content generation with new goal
+                          const contentRes = await fetch("/api/generate-content", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              description: project.description,
+                              appName: project.productPage?.name || project.title,
+                              shareUrl: project.productPage?.shareUrl || "",
+                              audienceGroups: viabilityResult.smartTargeting?.audienceGroups || project.audienceGroups || [],
+                              viabilityAnalysis: viabilityResult.viabilityAnalysis || project.viabilityAnalysis,
+                              contacts: project.contacts,
+                              projectGoal: g.key,
+                            }),
+                          });
+                          const contentResult = await contentRes.json();
+                          if (contentResult.posts) updates.posts = contentResult.posts;
+                          if (contentResult.emailDrafts) updates.emailDrafts = contentResult.emailDrafts;
+
+                          if (Object.keys(updates).length > 0) {
+                            updateProject(id, updates as Partial<typeof project>);
+                          }
+                        } catch (err) {
+                          console.error("Goal re-run failed:", err);
+                        } finally {
+                          setRerunningGoal(false);
+                        }
+                      }}
                       className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
                         project.projectGoal === g.key
                           ? "bg-brand-primary text-white"
                           : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
+                      } disabled:opacity-50`}
                     >
                       {g.icon} {g.label}
                     </button>
                   ))}
                 </div>
+                {rerunningGoal && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                    <span className="w-3.5 h-3.5 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+                    Re-analyzing...
+                  </div>
+                )}
               </div>
             </Card>
 
@@ -735,7 +965,7 @@ export default function ProjectPage() {
                 </button>
               </div>
 
-              {/* Analyze Growth Intelligence */}
+              {/* Generate Growth Checklist */}
               {project.founders && project.founders.length > 0 && (
                 <div className="mt-4">
                   <button
@@ -752,11 +982,14 @@ export default function ProjectPage() {
                             appName: project.productPage?.name || project.title,
                             projectGoal: project.projectGoal,
                             competitors: project.detectedCompetitors,
+                            audienceGroups: project.audienceGroups?.map((g) => ({ name: g.name, count: g.contacts?.length || 0 })),
+                            linkedInPosts: project.linkedInPosts?.slice(0, 5),
+                            viabilityScore: project.viabilityAnalysis?.overallScore,
                           }),
                         });
                         const result = await res.json();
-                        if (result.growthIntelligence) {
-                          updateProject(id, { growthIntelligence: result.growthIntelligence });
+                        if (result.growthChecklist) {
+                          updateProject(id, { growthChecklist: result.growthChecklist });
                         }
                       } catch (err) {
                         console.error("Founder analysis failed:", err);
@@ -770,47 +1003,146 @@ export default function ProjectPage() {
                     {analyzingFounders ? (
                       <span className="flex items-center justify-center gap-1.5">
                         <span className="w-3.5 h-3.5 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
-                        Analyzing growth intelligence...
+                        {project.growthChecklist ? "Regenerating checklist..." : "Generating growth checklist..."}
                       </span>
-                    ) : "Analyze Growth Intelligence"}
+                    ) : project.growthChecklist ? "Regenerate Growth Checklist" : "Generate Growth Checklist"}
                   </button>
                 </div>
               )}
 
-              {/* Growth Intelligence Results */}
-              {project.growthIntelligence && (
-                <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-                  {([
-                    { key: "networkLeverage", label: "Network Leverage", icon: "\u{1F310}" },
-                    { key: "contentAuthority", label: "Content Authority", icon: "\u{1F4DD}" },
-                    { key: "warmIntroPaths", label: "Warm Intro Paths", icon: "\u{1F91D}" },
-                    { key: "credibilitySignals", label: "Credibility Signals", icon: "\u{2B50}" },
-                  ] as const).map((section) => (
-                    <div key={section.key}>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                        {section.icon} {section.label}
-                      </p>
-                      <p className="text-sm text-gray-700">
-                        {project.growthIntelligence![section.key]}
-                      </p>
+              {/* Growth Checklist Results */}
+              {project.growthChecklist && project.growthChecklist.sections.length > 0 && (() => {
+                const checkedItems = project.growthChecklist!.checkedItems || [];
+                const totalItems = project.growthChecklist!.sections.reduce((sum, s) => sum + s.items.length, 0);
+                const completedCount = checkedItems.length;
+                const sectionIconMap: Record<string, string> = {
+                  "this-week": "\u{1F525}",
+                  "content-linkedin": "\u{1F4E2}",
+                  "network-activation": "\u{1F91D}",
+                  "direct-outreach": "\u{1F3AF}",
+                  "growth-loops": "\u{1F504}",
+                };
+                const effortBadge = (effort: string) => {
+                  if (effort === "quick") return { icon: "\u26A1", label: "15 min", cls: "bg-green-100 text-green-700" };
+                  if (effort === "medium") return { icon: "\u{1F528}", label: "1-2 hrs", cls: "bg-yellow-100 text-yellow-700" };
+                  return { icon: "\u{1F4C5}", label: "1 day+", cls: "bg-orange-100 text-orange-700" };
+                };
+
+                return (
+                  <div className="mt-4 border-t border-gray-100 pt-4">
+                    {/* Progress */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Growth Checklist</span>
+                      <span className="text-xs font-medium text-gray-500">{completedCount}/{totalItems} completed</span>
                     </div>
-                  ))}
-                  {project.growthIntelligence.channelFit.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                        {"\u{1F3AF}"} Best Channels
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {project.growthIntelligence.channelFit.map((ch, i) => (
-                          <span key={i} className="px-2.5 py-1 text-xs bg-brand-primary/10 text-brand-primary rounded-full font-medium">
-                            {ch}
-                          </span>
-                        ))}
+                    <div className="h-1.5 bg-gray-100 rounded-full mb-4 overflow-hidden">
+                      <div
+                        className="h-full bg-brand-primary rounded-full transition-all"
+                        style={{ width: totalItems > 0 ? `${(completedCount / totalItems) * 100}%` : "0%" }}
+                      />
+                    </div>
+
+                    {/* Sections */}
+                    <div className="space-y-4">
+                      {project.growthChecklist!.sections.map((section) => (
+                        <div key={section.id}>
+                          <h4 className="text-sm font-semibold text-gray-900 mb-2">
+                            {sectionIconMap[section.id] || "\u{2705}"} {section.title}
+                          </h4>
+                          <div className="space-y-1">
+                            {section.items.map((item, itemIdx) => {
+                              const itemKey = `${section.id}-${itemIdx}`;
+                              const isChecked = checkedItems.includes(itemKey);
+                              const badge = effortBadge(item.effort);
+
+                              return (
+                                <div key={itemIdx} className={`flex items-start gap-3 py-2 px-2 rounded-lg transition-colors ${isChecked ? "bg-gray-50 opacity-60" : "hover:bg-gray-50"}`}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      const current = project.growthChecklist?.checkedItems || [];
+                                      const updated = isChecked
+                                        ? current.filter((k) => k !== itemKey)
+                                        : [...current, itemKey];
+                                      updateProject(id, {
+                                        growthChecklist: { ...project.growthChecklist!, checkedItems: updated },
+                                      });
+                                    }}
+                                    className="mt-1 shrink-0 accent-brand-primary"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`text-sm font-medium ${isChecked ? "line-through text-gray-400" : "text-gray-900"}`}>
+                                        {item.text}
+                                      </span>
+                                      <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full ${badge.cls}`}>
+                                        {badge.icon} {badge.label}
+                                      </span>
+                                      {item.linkTo && (
+                                        <button
+                                          onClick={() => {
+                                            if (item.linkTo === "people") { setActiveTab("people"); }
+                                            else if (item.linkTo === "linkedin") { setActiveTab("people"); setPeopleSubTab("linkedin"); }
+                                            else if (item.linkTo === "content") { setActiveTab("content"); }
+                                          }}
+                                          className="text-[10px] font-medium text-brand-primary hover:underline"
+                                        >
+                                          {item.linkTo === "people" ? "People tab" : item.linkTo === "linkedin" ? "LinkedIn tab" : "Content tab"} {"\u2192"}
+                                        </button>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-0.5">{item.why}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Posts to engage with right now */}
+                    {project.linkedInPosts && project.linkedInPosts.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-gray-100">
+                        <h4 className="text-sm font-semibold text-gray-900 mb-2">
+                          {"\u{1F4CC}"} Posts to Engage With Right Now
+                        </h4>
+                        <p className="text-xs text-gray-500 mb-2">Live posts from your LinkedIn tab that match your checklist:</p>
+                        <div className="space-y-2">
+                          {project.linkedInPosts.slice(0, 3).map((post, i) => (
+                            <div key={i} className="flex items-start gap-3 py-2 px-2 bg-purple-50/50 rounded-lg">
+                              <div className="w-7 h-7 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 font-semibold text-[10px] shrink-0">
+                                {post.authorName.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-gray-900 truncate">{post.authorName} &middot; {post.authorTitle}</p>
+                                <p className="text-xs text-gray-600 line-clamp-2 mt-0.5">{post.postContent.slice(0, 120)}...</p>
+                                {post.suggestedComment && (
+                                  <p className="text-xs text-purple-700 italic mt-1 line-clamp-1">&ldquo;{post.suggestedComment.slice(0, 100)}...&rdquo;</p>
+                                )}
+                                <div className="flex gap-2 mt-1">
+                                  {post.postUrl && (
+                                    <a href={post.postUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] font-medium text-brand-primary hover:underline">
+                                      View Post {"\u2192"}
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={() => { setActiveTab("people"); setPeopleSubTab("linkedin"); }}
+                                    className="text-[10px] font-medium text-gray-500 hover:underline"
+                                  >
+                                    See all posts
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })()}
             </Card>
 
             {/* Viability Analysis */}
@@ -964,7 +1296,7 @@ export default function ProjectPage() {
             <div className="flex gap-1 mb-4 flex-wrap">
               {[
                 { key: "customers" as const, label: "Users & Customers", icon: "\u{1F465}" },
-                ...(project.projectGoal !== 'side_project' ? [{ key: "investors" as const, label: "Investors", icon: "\u{1F4B0}" }] : []),
+                ...(project.projectGoal !== 'side_project' ? [{ key: "investors" as const, label: project.projectGoal === 'small_business' ? "Angels & Advisors" : "Investors", icon: "\u{1F4B0}" }] : []),
                 { key: "teammates" as const, label: "Teammates", icon: "\u{1F91D}" },
                 { key: "linkedin" as const, label: "LinkedIn Posts", icon: "\u{1F4AC}" },
               ].map((sub) => (

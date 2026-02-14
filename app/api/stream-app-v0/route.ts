@@ -1,27 +1,35 @@
 import { NextRequest } from "next/server";
-import { generateAppStream } from "@/lib/ai";
+import { generateAppCodeStream } from "@/lib/v0";
+import type { AppGenerationContext } from "@/lib/v0";
 
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
-  const { description } = (await req.json()) as { description: string };
+  const { description, context } = (await req.json()) as {
+    description: string;
+    context?: Partial<AppGenerationContext>;
+  };
 
-  console.log("[stream-app] Starting stream for:", description.slice(0, 80));
+  const fullContext: AppGenerationContext = {
+    description,
+    ...context,
+  };
+
+  console.log("[stream-app-v0] Starting stream for:", description.slice(0, 80));
 
   const stream = new ReadableStream({
     async start(controller) {
       try {
         let totalChunks = 0;
-        for await (const chunk of generateAppStream(description)) {
+        for await (const chunk of generateAppCodeStream(fullContext)) {
           totalChunks++;
           controller.enqueue(new TextEncoder().encode(chunk));
         }
-        console.log("[stream-app] Stream complete. Total chunks:", totalChunks);
+        console.log("[stream-app-v0] Stream complete. Total chunks:", totalChunks);
         controller.close();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error("[stream-app] Stream error:", msg);
-        // Send error as final chunk so client can detect it
+        console.error("[stream-app-v0] Stream error:", msg);
         controller.enqueue(new TextEncoder().encode(`\n\n__STREAM_ERROR__:${msg}`));
         controller.close();
       }

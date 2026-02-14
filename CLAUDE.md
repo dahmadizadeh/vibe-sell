@@ -49,6 +49,7 @@ curl -s -X POST "$CRUSTDATA_BASE_URL/screener/persondb/search" \
 ## Environment Variables
 - CRUSTDATA_API_KEY
 - ANTHROPIC_API_KEY
+- V0_API_KEY
 
 ## Directory Structure
 - /app/page.tsx — Main product experience (single page app)

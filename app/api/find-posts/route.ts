@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchLinkedInPosts } from "@/lib/crustdata";
-import type { LinkedInPost } from "@/lib/types";
+import type { LinkedInPost, ProjectGoal } from "@/lib/types";
 import Anthropic from "@anthropic-ai/sdk";
+import { getGoalContext } from "@/lib/ai-analyze";
 
 export const maxDuration = 60;
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
-  const { description, appName, industry, competitors } = (await req.json()) as {
+  const { description, appName, industry, competitors, projectGoal } = (await req.json()) as {
     description: string;
     appName: string;
     industry: string;
     competitors?: string[];
+    projectGoal?: ProjectGoal;
   };
 
   try {
@@ -129,7 +131,7 @@ Return ONLY a JSON array of {idx, score}. No markdown. No explanation.`,
       messages: [
         {
           role: "user",
-          content: `You are a LinkedIn engagement strategist. A founder built "${appName}": "${description}".
+          content: `You are a LinkedIn engagement strategist. A founder built "${appName}": "${description}".${getGoalContext(projectGoal)}
 ${competitors?.length ? `\nCompetitors: ${competitors.join(", ")}. These posts mention competitors — the suggested comments should subtly position ${appName} as an alternative without being negative about the competitor.\n` : ""}
 Analyze these LinkedIn posts and for each, explain why it's relevant and how the founder should engage.
 

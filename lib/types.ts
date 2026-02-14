@@ -38,6 +38,10 @@ export interface Project {
   projectGoal?: ProjectGoal;
   founders?: FounderProfile[];
   growthIntelligence?: GrowthIntelligence;
+  growthChecklist?: GrowthChecklist;
+  landingPageCode?: string;
+  appCode?: string;
+  appEditHistory?: string[];
 }
 
 export interface Targeting {
@@ -288,4 +292,23 @@ export interface GrowthIntelligence {
   warmIntroPaths: string;
   credibilitySignals: string;
   channelFit: string[];
+}
+
+export interface GrowthChecklistItem {
+  text: string;
+  why: string;
+  effort: 'quick' | 'medium' | 'long';
+  linkTo?: 'people' | 'linkedin' | 'content';
+}
+
+export interface GrowthChecklistSection {
+  id: string;
+  title: string;
+  icon: string;
+  items: GrowthChecklistItem[];
+}
+
+export interface GrowthChecklist {
+  sections: GrowthChecklistSection[];
+  checkedItems?: string[];
 }

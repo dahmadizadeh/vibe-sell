@@ -246,63 +246,86 @@ export async function searchLinkedInPosts(
 ): Promise<CrustdataLinkedInPost[]> {
   if (!API_KEY) throw new Error("CRUSTDATA_API_KEY not set");
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  // Crustdata keyword search supports max ~6 keywords with OR.
+  // Batch keywords into groups of 5 to stay within limits, then merge + deduplicate.
+  const BATCH_SIZE = 5;
+  const batches: string[][] = [];
+  for (let i = 0; i < keywords.length; i += BATCH_SIZE) {
+    batches.push(keywords.slice(i, i + BATCH_SIZE));
+  }
 
-  // Crustdata expects a single keyword string with OR operators, not an array
-  const keywordString = keywords.join(" OR ");
-  const pages = Math.ceil(limit / 10); // ~10 results per page
+  console.log("[crustdata] searchLinkedInPosts: keywords=", keywords, "batches=", batches.length);
 
-  try {
-    const allPosts: CrustdataLinkedInPost[] = [];
+  const allPosts: CrustdataLinkedInPost[] = [];
+  const seenUrls = new Set<string>();
 
-    for (let page = 1; page <= pages; page++) {
-      const res = await fetch(`${BASE_URL}/screener/linkedin_posts/keyword_search/`, {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-          keyword: keywordString,
-          page,
-          date_posted: "past-month",
-          sort_by: "relevance",
-        }),
-        signal: controller.signal,
-      });
+  for (const batch of batches) {
+    const keywordString = batch.join(" OR ");
+    const pagesNeeded = Math.ceil(limit / 10);
 
-      console.log("[crustdata] searchLinkedInPosts page", page, "status:", res.status);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-      if (!res.ok) {
-        const body = await res.text();
-        console.error("[crustdata] searchLinkedInPosts error:", body.slice(0, 500));
-        throw new Error(`Crustdata LinkedIn posts search failed: ${res.status}`);
+    try {
+      for (let page = 1; page <= pagesNeeded; page++) {
+        const res = await fetch(`${BASE_URL}/screener/linkedin_posts/keyword_search/`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            keyword: keywordString,
+            page,
+            date_posted: "past-month",
+            sort_by: "relevance",
+          }),
+          signal: controller.signal,
+        });
+
+        console.log("[crustdata] searchLinkedInPosts batch=", batch.join(","), "page=", page, "status:", res.status);
+
+        if (!res.ok) {
+          const body = await res.text();
+          console.error("[crustdata] searchLinkedInPosts error:", body.slice(0, 500));
+          // Don't throw on individual batch failure — try remaining batches
+          break;
+        }
+
+        const data = await res.json();
+        if (page === 1 && batches.indexOf(batch) === 0) {
+          console.log("[crustdata] searchLinkedInPosts response keys:", Object.keys(data));
+        }
+
+        const rawPosts: Record<string, unknown>[] = data.posts || data.results || (Array.isArray(data) ? data : []);
+        if (rawPosts.length > 0 && page === 1 && batches.indexOf(batch) === 0) {
+          console.log("[crustdata] First raw post keys:", Object.keys(rawPosts[0]));
+          console.log("[crustdata] First raw post sample:", JSON.stringify(rawPosts[0], null, 2).slice(0, 500));
+        }
+
+        const mapped = rawPosts.map(mapRawPost);
+        const valid = mapped.filter(
+          (p) => p.content && p.content.length > 20 && p.authorName && p.authorName !== "Unknown"
+        );
+
+        // Deduplicate by postUrl
+        for (const post of valid) {
+          const key = post.postUrl || `${post.authorName}:${post.content.slice(0, 100)}`;
+          if (!seenUrls.has(key)) {
+            seenUrls.add(key);
+            allPosts.push(post);
+          }
+        }
+
+        if (rawPosts.length === 0 || allPosts.length >= limit) break;
       }
-
-      const data = await res.json();
-      if (page === 1) {
-        console.log("[crustdata] searchLinkedInPosts response keys:", Object.keys(data));
-      }
-
-      const rawPosts: Record<string, unknown>[] = data.posts || data.results || (Array.isArray(data) ? data : []);
-      if (rawPosts.length > 0 && page === 1) {
-        console.log("[crustdata] First raw post keys:", Object.keys(rawPosts[0]));
-        console.log("[crustdata] First raw post sample:", JSON.stringify(rawPosts[0], null, 2).slice(0, 500));
-      }
-
-      const mapped = rawPosts.map(mapRawPost);
-      const valid = mapped.filter(
-        (p) => p.content && p.content.length > 20 && p.authorName && p.authorName !== "Unknown"
-      );
-      allPosts.push(...valid);
-
-      // Stop early if we have enough or if no results returned
-      if (rawPosts.length === 0 || allPosts.length >= limit) break;
+    } finally {
+      clearTimeout(timeout);
     }
 
-    console.log("[crustdata] searchLinkedInPosts: total", allPosts.length, "valid posts");
-    return allPosts.slice(0, limit);
-  } finally {
-    clearTimeout(timeout);
+    // Stop if we have enough posts across all batches
+    if (allPosts.length >= limit) break;
   }
+
+  console.log("[crustdata] searchLinkedInPosts: total", allPosts.length, "valid unique posts");
+  return allPosts.slice(0, limit);
 }
 
 // ─── Full Person Enrichment ──────────────────────────────────────────────────

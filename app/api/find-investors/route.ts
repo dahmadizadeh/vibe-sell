@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchPeople, mapPersonToContact } from "@/lib/crustdata";
-import type { Contact } from "@/lib/types";
+import type { Contact, ProjectGoal } from "@/lib/types";
 import Anthropic from "@anthropic-ai/sdk";
+import { getGoalContext } from "@/lib/ai-analyze";
 
 export const maxDuration = 60;
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
-  const { description, appName, industry } = (await req.json()) as {
+  const { description, appName, industry, projectGoal } = (await req.json()) as {
     description: string;
     appName: string;
     industry: string;
+    projectGoal?: ProjectGoal;
   };
 
   try {
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
           max_tokens: 2048,
           messages: [{
             role: "user",
-            content: `For the product "${appName}" in ${industry}: "${description}"
+            content: `For the product "${appName}" in ${industry}: "${description}"${getGoalContext(projectGoal)}
 
 Generate a one-sentence match reason for each investor explaining why the founder of ${appName} should reach out to them. Be specific about the connection between their investment focus/firm and this product.
 

@@ -4,9 +4,21 @@ import type { Targeting, ViabilityAnalysis, AudienceGroup, ProjectGoal } from ".
 export function getGoalContext(projectGoal?: ProjectGoal): string {
   if (!projectGoal) return "";
   const contexts: Record<ProjectGoal, string> = {
-    side_project: "\n\nIMPORTANT CONTEXT: This is a side project. Focus on validation, early adopters, community channels, and low-cost experiments.",
-    small_business: "\n\nIMPORTANT CONTEXT: This is a small business aiming for profitability. Focus on paying customers, unit economics, sustainable channels, and practical monetization.",
-    venture_scale: "\n\nIMPORTANT CONTEXT: This is a venture-scale startup. Focus on TAM, design partners, enterprise buyers, investors, rapid growth, and network effects.",
+    side_project: `\n\nIMPORTANT CONTEXT: The founder's goal is SIDE PROJECT.
+- Weight feasibility and speed-to-market highest. Be encouraging about small experiments. Don't penalize for small market size.
+- Find early adopters, beta testers, community members. Focus on people who try new tools.
+- Suggest low-cost, fast experiments (Product Hunt, Reddit, Indie Hackers, Twitter, free communities).
+- Tailor match reasons: "Would be a great beta tester because..."`,
+    small_business: `\n\nIMPORTANT CONTEXT: The founder's goal is SMALL BUSINESS (profitability-focused).
+- Weight monetization and sustainable unit economics highest. Focus on profitability, not growth rate.
+- Find paying customers and distribution partners. Focus on people with budget authority.
+- Suggest profitable channels (Google Ads, cold email, partnerships, SEO, referrals).
+- Tailor match reasons: "Could be a paying customer because..."`,
+    venture_scale: `\n\nIMPORTANT CONTEXT: The founder's goal is VENTURE SCALE.
+- Weight market size, timing, and defensibility highest. Evaluate for VC fundability.
+- Find design partners, enterprise champions, and lighthouse accounts. Focus on people at companies that could become case studies.
+- Suggest enterprise channels (warm intros, accelerator networks, thought leadership, conference dinners, design partner programs).
+- Tailor match reasons: "Could be a design partner because..."`,
   };
   return contexts[projectGoal];
 }
