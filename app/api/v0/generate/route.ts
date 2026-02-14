@@ -3,6 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  if (!process.env.V0_API_KEY) {
+    console.error("[v0] V0_API_KEY is not configured");
+    return NextResponse.json(
+      { error: "V0_API_KEY is not configured" },
+      { status: 500 }
+    );
+  }
+
   const { prompt, existingCode } = await req.json();
 
   const isEdit = !!existingCode;
@@ -30,7 +38,7 @@ Use only React hooks. No external package imports. No Next.js router. No fetch c
     : `Build this app: ${prompt}`;
 
   try {
-    const response = await fetch("https://api.v0.dev/v1/chat/completions", {
+    const res = await fetch("https://api.v0.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.V0_API_KEY}`,
@@ -47,17 +55,25 @@ Use only React hooks. No external package imports. No Next.js router. No fetch c
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[v0] API error:", response.status, errorText);
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("[v0] API error:", res.status, errorText);
       return NextResponse.json(
-        { error: `v0 API error: ${response.status}` },
-        { status: 500 }
+        { error: `v0 error (${res.status}): ${errorText}` },
+        { status: res.status }
       );
     }
 
-    const data = await response.json();
+    const data = await res.json();
     const generatedCode = data.choices?.[0]?.message?.content || "";
+
+    if (!generatedCode) {
+      console.error("[v0] Empty response from API. Full response:", JSON.stringify(data).slice(0, 500));
+      return NextResponse.json(
+        { error: "v0 returned an empty response" },
+        { status: 500 }
+      );
+    }
 
     // Strip markdown code fences if present
     const cleanCode = generatedCode
@@ -69,9 +85,10 @@ Use only React hooks. No external package imports. No Next.js router. No fetch c
 
     return NextResponse.json({ code: cleanCode });
   } catch (error) {
-    console.error("[v0] Error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[v0] Fetch error:", message);
     return NextResponse.json(
-      { error: "Failed to generate app" },
+      { error: `v0 request failed: ${message}` },
       { status: 500 }
     );
   }

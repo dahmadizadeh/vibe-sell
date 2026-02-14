@@ -162,8 +162,16 @@ export function AppBuilder({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: prompt || buildPrompt() }),
         });
-        const data = await res.json();
+        // Read as text first to avoid JSON parse crash on error responses
+        const text = await res.text();
+        let data: { code?: string; error?: string };
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`Server returned non-JSON (${res.status}): ${text.slice(0, 200)}`);
+        }
         if (data.error) throw new Error(data.error);
+        if (!data.code) throw new Error("No code returned from v0");
         onUpdate({ appCode: data.code, appEditHistory: undoStack });
       } catch (err) {
         console.error("App generation failed:", err);
@@ -189,14 +197,20 @@ export function AppBuilder({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: instruction, existingCode: appCode }),
         });
-        const data = await res.json();
+        const text = await res.text();
+        let data: { code?: string; error?: string };
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`Server returned non-JSON (${res.status}): ${text.slice(0, 200)}`);
+        }
         if (data.error) throw new Error(data.error);
+        if (!data.code) throw new Error("No code returned from v0");
         onUpdate({ appCode: data.code, appEditHistory: newUndoStack });
         setEditInput("");
       } catch (err) {
         console.error("App edit failed:", err);
         setGenError(err instanceof Error ? err.message : "Edit failed");
-        // Revert undo stack on failure
         setUndoStack((prev) => prev.slice(0, -1));
       } finally {
         setEditing(false);
