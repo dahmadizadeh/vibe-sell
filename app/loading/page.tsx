@@ -94,7 +94,7 @@ function LoadingContent() {
 
   const animateCode = useCallback((code: string) => {
     let i = 0;
-    const chunkSize = 15;
+    const chunkSize = 20;
     const interval = setInterval(() => {
       i += chunkSize;
       if (i >= code.length) {
@@ -103,9 +103,42 @@ function LoadingContent() {
       } else {
         setStreamedCode(code.slice(0, i));
       }
-    }, 20);
+    }, 16);
     return () => clearInterval(interval);
   }, []);
+
+  // Show progressive placeholder while API is pending
+  useEffect(() => {
+    if (genStatus !== "generating" || reactCode) return;
+    const lines = [
+      "// Analyzing your idea...",
+      "// Setting up React component...",
+      "",
+      "function App() {",
+      "  const [data, setData] = React.useState(null);",
+      "",
+      "  // Building UI components...",
+    ];
+    let lineIdx = 0;
+    let charIdx = 0;
+    let current = "";
+    const interval = setInterval(() => {
+      if (lineIdx >= lines.length) {
+        clearInterval(interval);
+        return;
+      }
+      const line = lines[lineIdx];
+      if (charIdx <= line.length) {
+        current = lines.slice(0, lineIdx).join("\n") + "\n" + line.slice(0, charIdx);
+        setStreamedCode(current);
+        charIdx++;
+      } else {
+        lineIdx++;
+        charIdx = 0;
+      }
+    }, 40);
+    return () => clearInterval(interval);
+  }, [genStatus, reactCode]);
 
   const runBuilderFlow = useCallback(
     async (pid: string, description: string) => {

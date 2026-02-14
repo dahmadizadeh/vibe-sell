@@ -71,9 +71,9 @@ export function CodeGeneration({
     if (reactCode) return reactCode;
     const extracted = extractCodeFromStream(streamedCode);
     if (extracted) return extracted;
-    if (streamedCode.length < 50) return "// Generating your app...\n";
-    return "// Building app components...\n// " + (appName || "Please wait") + "\n";
-  }, [reactCode, streamedCode, appName]);
+    if (streamedCode.length > 0) return streamedCode;
+    return "// Analyzing your idea...\n";
+  }, [reactCode, streamedCode]);
 
   useEffect(() => {
     if (codeRef.current) {
