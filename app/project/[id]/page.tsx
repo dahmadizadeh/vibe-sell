@@ -13,17 +13,25 @@ import { CompanyTabs } from "@/components/CompanyTabs";
 import { EmailComposer } from "@/components/EmailComposer";
 import { useAppStore } from "@/lib/store";
 import { uniqueCompanies } from "@/lib/utils";
-import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage } from "@/lib/types";
+import { PostCard } from "@/components/PostCard";
+import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage, PostTemplate } from "@/lib/types";
+
+const BUILDER_TABS = [
+  { key: "app" as const, label: "Your App" },
+  { key: "people" as const, label: "People to Reach" },
+  { key: "content" as const, label: "Go-to-Market Content" },
+];
 
 export default function ProjectPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { getProject, setContacts, setTargeting, setProductPage, setPitchPages, updateEmailDraft, markDraftStatus, hydrate } = useAppStore();
+  const { getProject, updateProject, setContacts, setTargeting, setProductPage, setPitchPages, updateEmailDraft, markDraftStatus, hydrate } = useAppStore();
   const [hydrated, setHydrated] = useState(false);
   const [activeCompany, setActiveCompany] = useState("");
   const [composerContactId, setComposerContactId] = useState<string | null>(null);
   const [activeAudienceGroup, setActiveAudienceGroup] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"app" | "people" | "content">("app");
 
   useEffect(() => {
     hydrate();
@@ -110,6 +118,12 @@ export default function ProjectPage() {
     if (project) markDraftStatus(project.id, contactId, "drafted");
   }, [project, markDraftStatus]);
 
+  const handlePostUpdate = useCallback((updated: PostTemplate) => {
+    if (!project?.posts) return;
+    const newPosts = project.posts.map((p) => p.id === updated.id ? updated : p);
+    updateProject(project.id, { posts: newPosts });
+  }, [project, updateProject]);
+
   if (!hydrated || !project) {
     return (
       <div className="min-h-[calc(100vh-56px)] flex items-center justify-center">
@@ -140,54 +154,79 @@ export default function ProjectPage() {
   if (isBuilder) {
     return (
       <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* TOP: Full-width App Preview */}
-        {project.productPage?.reactCode && (
-          <Card className="p-0 mb-6 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <div>
-                <span className="font-semibold text-gray-900">
-                  {project.productPage.name}
+        {/* Tab Navigation */}
+        <div className="flex gap-1 mb-6 border-b border-gray-200">
+          {BUILDER_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.key
+                  ? "border-brand-primary text-brand-primary"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              {tab.label}
+              {tab.key === "people" && project.contacts.length > 0 && (
+                <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                  {project.contacts.length}
                 </span>
-                <span className="text-gray-400 text-sm ml-2">
-                  {project.productPage.tagline}
+              )}
+              {tab.key === "content" && project.posts && project.posts.length > 0 && (
+                <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
+                  {project.posts.length}
                 </span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => window.open(project.productPage!.shareUrl, "_blank")}
-                  className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
-                >
-                  Open Full Screen
-                </button>
-                <button
-                  onClick={() => {
-                    const url = `${window.location.origin}${project.productPage!.shareUrl}`;
-                    navigator.clipboard.writeText(url);
-                  }}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Copy Link
-                </button>
-              </div>
-            </div>
-            <AppPreview code={project.productPage.reactCode} height="400px" />
-          </Card>
-        )}
+              )}
+            </button>
+          ))}
+        </div>
 
-        {/* Fallback: static product page if no reactCode */}
-        {project.productPage && !project.productPage.reactCode && (
-          <Card className="p-6 mb-6">
-            <ProductPagePreview
-              page={project.productPage}
-              onUpdate={handleProductPageUpdate}
-            />
-          </Card>
-        )}
+        {/* Tab 1: Your App */}
+        {activeTab === "app" && (
+          <>
+            {project.productPage?.reactCode && (
+              <Card className="p-0 mb-6 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <div>
+                    <span className="font-semibold text-gray-900">
+                      {project.productPage.name}
+                    </span>
+                    <span className="text-gray-400 text-sm ml-2">
+                      {project.productPage.tagline}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => window.open(project.productPage!.shareUrl, "_blank")}
+                      className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
+                    >
+                      Open Full Screen
+                    </button>
+                    <button
+                      onClick={() => {
+                        const url = `${window.location.origin}${project.productPage!.shareUrl}`;
+                        navigator.clipboard.writeText(url);
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Copy Link
+                    </button>
+                  </div>
+                </div>
+                <AppPreview code={project.productPage.reactCode} height="400px" />
+              </Card>
+            )}
 
-        {/* BOTTOM: Two columns */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* LEFT: Viability Score (2 cols) */}
-          <div className="lg:col-span-2">
+            {project.productPage && !project.productPage.reactCode && (
+              <Card className="p-6 mb-6">
+                <ProductPagePreview
+                  page={project.productPage}
+                  onUpdate={handleProductPageUpdate}
+                />
+              </Card>
+            )}
+
+            {/* Viability Analysis */}
             {project.viabilityAnalysis ? (
               <Card className="p-6">
                 <ViabilityScore analysis={project.viabilityAnalysis} />
@@ -204,62 +243,141 @@ export default function ProjectPage() {
                 />
               </Card>
             )}
-          </div>
+          </>
+        )}
 
-          {/* RIGHT: Contacts with audience group tabs (3 cols) */}
-          <div className="lg:col-span-3">
-            <Card className="p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">
-                Who to Reach Out To
-              </h2>
-              <p className="text-sm text-gray-500 mb-4">
-                {project.contacts.length} people across {uniqueCompanies(project.contacts)} companies
-              </p>
+        {/* Tab 2: People to Reach */}
+        {activeTab === "people" && (
+          <Card className="p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">
+              Who to Reach Out To
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {project.contacts.length} people across {uniqueCompanies(project.contacts)} companies
+            </p>
 
-              {/* Audience group tabs */}
-              {project.audienceGroups && project.audienceGroups.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-4">
+            {/* Audience group tabs */}
+            {project.audienceGroups && project.audienceGroups.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-4">
+                <button
+                  onClick={() => setActiveAudienceGroup(null)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                    !activeAudienceGroup
+                      ? "bg-brand-primary text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  All ({project.contacts.length})
+                </button>
+                {project.audienceGroups.map((group) => (
                   <button
-                    onClick={() => setActiveAudienceGroup(null)}
+                    key={group.id}
+                    onClick={() => setActiveAudienceGroup(group.id)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                      !activeAudienceGroup
+                      activeAudienceGroup === group.id
                         ? "bg-brand-primary text-white"
                         : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                   >
-                    All ({project.contacts.length})
+                    {group.name} ({group.contacts?.length || 0})
                   </button>
-                  {project.audienceGroups.map((group) => (
-                    <button
-                      key={group.id}
-                      onClick={() => setActiveAudienceGroup(group.id)}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                        activeAudienceGroup === group.id
-                          ? "bg-brand-primary text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
-                    >
-                      {group.name} ({group.contacts?.length || 0})
-                    </button>
+                ))}
+              </div>
+            )}
+
+            {/* Active group description */}
+            {activeGroupData && (
+              <p className="text-xs text-gray-500 mb-3 italic">
+                {activeGroupData.description}
+              </p>
+            )}
+
+            <ContactList
+              contacts={activeAudienceGroup === null ? project.contacts : activeContacts}
+              onWriteEmail={handleWriteEmail}
+              emailDrafts={project.emailDrafts}
+            />
+          </Card>
+        )}
+
+        {/* Tab 3: Go-to-Market Content */}
+        {activeTab === "content" && (
+          <div>
+            {/* Posts */}
+            {project.posts && project.posts.length > 0 ? (
+              <>
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                  Launch Playbook
+                </h2>
+                <p className="text-sm text-gray-500 mb-4">
+                  {project.posts.length} ready-to-post templates for your launch
+                </p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {project.posts.map((post) => (
+                    <PostCard
+                      key={post.id}
+                      post={post}
+                      onUpdate={handlePostUpdate}
+                    />
                   ))}
                 </div>
-              )}
-
-              {/* Active group description */}
-              {activeGroupData && (
-                <p className="text-xs text-gray-500 mb-3 italic">
-                  {activeGroupData.description}
+              </>
+            ) : (
+              <Card className="p-8 text-center">
+                <p className="text-gray-500 text-sm">
+                  No post templates generated yet. Re-run the analysis to generate go-to-market content.
                 </p>
-              )}
+              </Card>
+            )}
 
-              <ContactList
-                contacts={activeAudienceGroup === null ? project.contacts : activeContacts}
-                onWriteEmail={handleWriteEmail}
-                emailDrafts={project.emailDrafts}
-              />
-            </Card>
+            {/* Email drafts summary */}
+            {project.emailDrafts.length > 0 && (
+              <div className="mt-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                  Email Drafts
+                </h2>
+                <p className="text-sm text-gray-500 mb-3">
+                  {project.emailDrafts.length} personalized emails ready to send
+                </p>
+                <Card className="p-4">
+                  <div className="space-y-3">
+                    {project.emailDrafts.slice(0, 4).map((draft) => {
+                      const contact = project.contacts.find((c) => c.id === draft.contactId);
+                      return (
+                        <div
+                          key={draft.contactId}
+                          className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {contact?.name || "Unknown"} — {contact?.company}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {draft.subject}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (contact) handleWriteEmail(contact);
+                            }}
+                            className="ml-3 px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors shrink-0"
+                          >
+                            Open
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {project.emailDrafts.length > 4 && (
+                    <p className="text-xs text-gray-400 mt-3 text-center">
+                      + {project.emailDrafts.length - 4} more drafts &mdash; switch to &ldquo;People to Reach&rdquo; tab to see all
+                    </p>
+                  )}
+                </Card>
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Email Composer */}
         <EmailComposer

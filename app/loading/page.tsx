@@ -7,7 +7,7 @@ import { LoadingSteps } from "@/components/LoadingSteps";
 import { CodeGeneration } from "@/components/CodeGeneration";
 import { useAppStore } from "@/lib/store";
 import { detectBuilderScenario, getBuilderMockData, getSellerMockData } from "@/lib/mock-data";
-import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup } from "@/lib/types";
+import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup, PostTemplate } from "@/lib/types";
 
 // ─── Cache Helpers ───────────────────────────────────────────────────────────
 
@@ -52,13 +52,14 @@ type BuilderStep =
   | "analyzing"
   | "targeting"
   | "finding_customers"
+  | "creating_content"
   | "complete";
 
-const BUILDER_STEPS: { key: BuilderStep; label: string }[] = [
+const BUILDER_STEPS: { key: string; label: string }[] = [
   { key: "generating", label: "Build App" },
   { key: "analyzing", label: "Analyze Viability" },
-  { key: "targeting", label: "Figure Out Who to Reach" },
   { key: "finding_customers", label: "Find Real People" },
+  { key: "creating_content", label: "Go-to-Market Plan" },
   { key: "complete", label: "Done" },
 ];
 
@@ -78,6 +79,7 @@ function LoadingContent() {
   const [appName, setAppName] = useState<string>();
   const [appTagline, setAppTagline] = useState<string>();
   const [reactCode, setReactCode] = useState<string>();
+  const [stepDetails, setStepDetails] = useState<string[]>([]);
 
   useEffect(() => {
     hydrate();
@@ -86,7 +88,10 @@ function LoadingContent() {
   const project = getProject(projectId || "");
   const isBuilder = project?.mode === "builder";
 
-  // Animate code appearing character by character
+  const addStepDetail = useCallback((detail: string) => {
+    setStepDetails((prev) => [...prev, detail]);
+  }, []);
+
   const animateCode = useCallback((code: string) => {
     let i = 0;
     const chunkSize = 15;
@@ -111,6 +116,7 @@ function LoadingContent() {
       let productPage: ProductPage = mockData.productPage;
       let viabilityAnalysis: ViabilityAnalysis | undefined;
       let audienceGroups: AudienceGroup[] | undefined;
+      let posts: PostTemplate[] | undefined;
 
       // ── Step 1: Build the app ──────────────────────────────────────
       setGenStatus("generating");
@@ -132,6 +138,7 @@ function LoadingContent() {
           setAppTagline(productPage.tagline);
           setGenStatus("app_ready");
           setStatusMessage(`${productPage.name} built!`);
+          addStepDetail(`Generated "${productPage.name}" \u2014 ${productPage.tagline}`);
 
           animateCode(productPage.reactCode!);
           setReactCode(productPage.reactCode);
@@ -139,7 +146,10 @@ function LoadingContent() {
           await new Promise((r) => setTimeout(r, 2000));
         } else {
           if (result.targeting) targeting = result.targeting;
-          if (result.productPage) productPage = result.productPage;
+          if (result.productPage) {
+            productPage = result.productPage;
+            setAppName(productPage.name);
+          }
         }
       } catch (err) {
         console.error("analyze-idea fetch failed:", err);
@@ -163,7 +173,10 @@ function LoadingContent() {
         if (result.viabilityAnalysis) {
           viabilityAnalysis = result.viabilityAnalysis;
           setStatusMessage(
-            `${result.viabilityAnalysis.verdict} — ${result.viabilityAnalysis.overallScore}/100`
+            `${result.viabilityAnalysis.verdict} \u2014 ${result.viabilityAnalysis.overallScore}/100`
+          );
+          addStepDetail(
+            `Score: ${result.viabilityAnalysis.overallScore}/100 (${result.viabilityAnalysis.verdict}) \u2014 ${result.viabilityAnalysis.summary.slice(0, 80)}...`
           );
         }
 
@@ -171,10 +184,10 @@ function LoadingContent() {
           targeting = result.smartTargeting.targeting || targeting;
           audienceGroups = result.smartTargeting.audienceGroups;
           setGenStatus("targeting");
-          setStatusMessage(
-            `Found ${audienceGroups?.length || 0} audience groups to target`
-          );
-          await new Promise((r) => setTimeout(r, 1500));
+          const groupList = audienceGroups?.map((g) => `${g.count} ${g.name.toLowerCase()}`).join(", ") || "";
+          setStatusMessage(`Identified ${audienceGroups?.length || 0} audience groups`);
+          addStepDetail(`Found groups: ${groupList}`);
+          await new Promise((r) => setTimeout(r, 1200));
         }
       } catch (err) {
         console.error("analyze-viability fetch failed:", err);
@@ -188,7 +201,6 @@ function LoadingContent() {
       let dataSource: "live" | "mock" = "mock";
 
       if (audienceGroups && audienceGroups.length > 0) {
-        // Search per audience group
         for (const group of audienceGroups) {
           setStatusMessage(`Finding ${group.name}...`);
 
@@ -227,9 +239,17 @@ function LoadingContent() {
             allContacts.push(...contacts);
           }
         }
+
+        if (allContacts.length > 0) {
+          const groupSummary = audienceGroups
+            .filter((g) => g.contacts && g.contacts.length > 0)
+            .map((g) => `${g.contacts!.length} ${g.name.toLowerCase()}`)
+            .join(", ");
+          addStepDetail(`Found ${allContacts.length} people: ${groupSummary}`);
+        }
       }
 
-      // Fallback: single search if no audience groups or no results
+      // Fallback
       if (allContacts.length === 0) {
         const cacheKey = `crustdata_contacts_builder_${hashString(JSON.stringify(targeting))}`;
         let contacts: Contact[] | null = getCachedContacts(cacheKey);
@@ -258,18 +278,45 @@ function LoadingContent() {
         } else {
           allContacts = contacts;
         }
+        addStepDetail(`Found ${allContacts.length} people to reach`);
       }
 
-      // ── Step 4: Generate emails (mock for v1) ─────────────────────
-      await fetch("/api/generate-emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "builder",
-          context: { description, shareUrl: productPage.shareUrl },
-          contacts: allContacts.slice(0, 3),
-        }),
-      }).catch(() => {});
+      // ── Step 4: Create go-to-market content ────────────────────────
+      setGenStatus("creating_content");
+      setStatusMessage("Creating your go-to-market plan...");
+
+      let emailDrafts: EmailDraft[] = mockData.emailDrafts;
+
+      try {
+        const res = await fetch("/api/generate-content", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description,
+            appName: productPage.name,
+            shareUrl: productPage.shareUrl,
+            audienceGroups: audienceGroups || [],
+            viabilityAnalysis,
+            contacts: allContacts,
+          }),
+        });
+        const result = await res.json();
+
+        if (result.posts && result.posts.length > 0) {
+          posts = result.posts;
+          setStatusMessage(`Created ${result.posts.length} post templates`);
+        }
+        if (result.emailDrafts && result.emailDrafts.length > 0) {
+          emailDrafts = result.emailDrafts;
+        }
+
+        addStepDetail(
+          `Created ${posts?.length || 0} post templates and ${emailDrafts.length} email drafts`
+        );
+      } catch (err) {
+        console.error("generate-content fetch failed:", err);
+        addStepDetail("Using default outreach templates");
+      }
 
       // ── Done ───────────────────────────────────────────────────────
       setGenStatus("complete");
@@ -278,11 +325,12 @@ function LoadingContent() {
       updateProject(pid, {
         targeting,
         contacts: allContacts,
-        emailDrafts: mockData.emailDrafts,
+        emailDrafts,
         productPage,
         dataSource,
         viabilityAnalysis,
         audienceGroups,
+        posts,
         stats: {
           contactsFound: allContacts.length,
           emailsSent: 0,
@@ -294,7 +342,7 @@ function LoadingContent() {
       await new Promise((r) => setTimeout(r, 1500));
       router.push(`/project/${pid}`);
     },
-    [updateProject, router, animateCode]
+    [updateProject, router, animateCode, addStepDetail]
   );
 
   const runSellerFlow = useCallback(
@@ -401,15 +449,28 @@ function LoadingContent() {
   if (isBuilder) {
     return (
       <div className="min-h-[calc(100vh-56px)] flex items-center justify-center px-4 py-8">
-        <CodeGeneration
-          streamedCode={streamedCode}
-          status={genStatus}
-          statusMessage={statusMessage}
-          appName={appName}
-          appTagline={appTagline}
-          reactCode={reactCode}
-          steps={BUILDER_STEPS}
-        />
+        <div className="w-full max-w-5xl">
+          <CodeGeneration
+            streamedCode={streamedCode}
+            status={genStatus}
+            statusMessage={statusMessage}
+            appName={appName}
+            appTagline={appTagline}
+            reactCode={reactCode}
+            steps={BUILDER_STEPS}
+          />
+          {/* Step completion details */}
+          {stepDetails.length > 0 && (
+            <div className="mt-4 space-y-1.5">
+              {stepDetails.map((detail, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-gray-500">
+                  <span className="text-brand-success mt-0.5">\u2713</span>
+                  <span>{detail}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }

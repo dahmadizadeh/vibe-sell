@@ -20,6 +20,7 @@ export interface Project {
   dataSource?: 'live' | 'mock';
   viabilityAnalysis?: ViabilityAnalysis;
   audienceGroups?: AudienceGroup[];
+  posts?: PostTemplate[];
 }
 
 export interface Targeting {
@@ -127,6 +128,18 @@ export interface AudienceGroup {
   };
   count: number;
   contacts?: Contact[];
+}
+
+export interface PostTemplate {
+  id: string;
+  platform: string;
+  purpose: string;
+  title: string;
+  content: string;
+  targetAudience: string;
+  bestTimeToPost: string;
+  expectedReach: string;
+  communityName?: string | null;
 }
 
 export interface UserProfile {
