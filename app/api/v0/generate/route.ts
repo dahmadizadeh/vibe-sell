@@ -37,6 +37,21 @@ Use only React hooks. No external package imports. No Next.js router. No fetch c
     ? `Here is the current app code:\n\n${existingCode}\n\nEdit request: ${prompt}\n\nReturn the COMPLETE updated code.`
     : `Build this app: ${prompt}`;
 
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userMessage },
+  ];
+
+  console.log("[v0] Request:", {
+    url: "https://api.v0.dev/v1/chat/completions",
+    model: "v0-1.5-md",
+    hasApiKey: !!process.env.V0_API_KEY,
+    keyPrefix: process.env.V0_API_KEY?.substring(0, 8) + "...",
+    messageCount: messages.length,
+    isEdit,
+    promptLength: prompt?.length,
+  });
+
   try {
     const res = await fetch("https://api.v0.dev/v1/chat/completions", {
       method: "POST",
@@ -47,28 +62,39 @@ Use only React hooks. No external package imports. No Next.js router. No fetch c
       body: JSON.stringify({
         model: "v0-1.5-md",
         stream: false,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
+        messages,
         max_completion_tokens: 32000,
       }),
     });
 
+    // Always read as text first so we can log the full response
+    const rawText = await res.text();
+    console.log("[v0] Raw response status:", res.status);
+    console.log("[v0] Raw response body:", rawText.slice(0, 1000));
+
     if (!res.ok) {
-      const errorText = await res.text();
-      console.error("[v0] API error:", res.status, errorText);
+      console.error("[v0] API error:", res.status, rawText);
       return NextResponse.json(
-        { error: `v0 error (${res.status}): ${errorText}` },
+        { error: `v0 error (${res.status}): ${rawText.slice(0, 500)}` },
         { status: res.status }
       );
     }
 
-    const data = await res.json();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      console.error("[v0] Failed to parse JSON. Raw text:", rawText.slice(0, 500));
+      return NextResponse.json(
+        { error: `v0 returned non-JSON: ${rawText.slice(0, 300)}` },
+        { status: 500 }
+      );
+    }
+
     const generatedCode = data.choices?.[0]?.message?.content || "";
 
     if (!generatedCode) {
-      console.error("[v0] Empty response from API. Full response:", JSON.stringify(data).slice(0, 500));
+      console.error("[v0] Empty response from API. Full response:", rawText.slice(0, 500));
       return NextResponse.json(
         { error: "v0 returned an empty response" },
         { status: 500 }
