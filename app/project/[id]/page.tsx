@@ -167,6 +167,17 @@ export default function ProjectPage() {
         {/* RIGHT CARD */}
         {isBuilder ? (
           <Card className="p-6">
+            {project.productPage?.reactCode && (
+              <div style={{ background: '#f0f0f0', padding: 16, borderRadius: 8, marginBottom: 16, fontSize: 12 }}>
+                <strong>Debug:</strong> reactCode length: {project.productPage.reactCode.length} chars
+                <details>
+                  <summary>Show raw code</summary>
+                  <pre style={{ maxHeight: 200, overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: 11 }}>
+                    {project.productPage.reactCode.slice(0, 2000)}
+                  </pre>
+                </details>
+              </div>
+            )}
             {project.productPage?.reactCode ? (
               <div>
                 <h3 className="font-semibold text-gray-900 text-lg mb-1">

@@ -58,15 +58,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    console.log("[find-customers] Crustdata request:", JSON.stringify({ filters: { op: "and", conditions }, limit: 100 }, null, 2));
+
     const people = await searchPeople(conditions, 100);
+    console.log("[find-customers] Crustdata returned", people.length, "people");
+
     const contacts = people
       .map((p, i) => mapPersonToContact(p, i))
       .filter((c): c is Contact => c !== null);
 
     return NextResponse.json({ contacts, dataSource: "live" });
-  } catch (error) {
-    console.error("Crustdata find-customers error:", error);
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    console.error("[find-customers] Crustdata error:", err.message);
+    console.error("[find-customers] Stack:", err.stack);
+    console.error("[find-customers] CRUSTDATA_API_KEY set?", !!process.env.CRUSTDATA_API_KEY);
     const mockData = getBuilderMockData("sales");
-    return NextResponse.json({ contacts: mockData.contacts, dataSource: "mock" });
+    return NextResponse.json({ contacts: mockData.contacts, dataSource: "mock", _source: "mock", _error: err.message });
   }
 }
