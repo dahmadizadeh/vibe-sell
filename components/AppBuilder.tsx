@@ -85,6 +85,68 @@ function buildIframeHtml(code: string): string {
 </html>`;
 }
 
+// Read an SSE stream from /api/v0/generate and accumulate the code content
+async function readV0Stream(
+  response: Response,
+  onChunk: (accumulated: string) => void
+): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let fullCode = "";
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data: ")) continue;
+      const data = trimmed.slice(6);
+      if (data === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(data);
+        const content = parsed.choices?.[0]?.delta?.content || "";
+        if (content) {
+          fullCode += content;
+          onChunk(fullCode);
+        }
+      } catch {
+        // skip malformed SSE lines
+      }
+    }
+  }
+
+  // Process remaining buffer
+  if (buffer.trim().startsWith("data: ")) {
+    const data = buffer.trim().slice(6);
+    if (data !== "[DONE]") {
+      try {
+        const parsed = JSON.parse(data);
+        const content = parsed.choices?.[0]?.delta?.content || "";
+        if (content) {
+          fullCode += content;
+        }
+      } catch {
+        // skip
+      }
+    }
+  }
+
+  return fullCode;
+}
+
+function extractCode(text: string): string {
+  const match = text.match(/```(?:tsx|jsx|javascript|js|react)?\s*\n([\s\S]*?)```/);
+  return match ? match[1].trim() : text.trim();
+}
+
 export function AppBuilder({
   appCode,
   description,
@@ -100,6 +162,7 @@ export function AppBuilder({
   const [generating, setGenerating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editInput, setEditInput] = useState("");
+  const [streamingCode, setStreamingCode] = useState("");
   const [undoStack, setUndoStack] = useState<string[]>(appEditHistory || []);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [iframeUrl, setIframeUrl] = useState<string>("");
@@ -154,6 +217,7 @@ export function AppBuilder({
         setUndoStack((prev) => [...prev.slice(-19), appCode]);
       }
       setGenerating(true);
+      setStreamingCode("");
       setGenError(null);
       setRenderError(null);
       try {
@@ -162,20 +226,23 @@ export function AppBuilder({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: prompt || buildPrompt() }),
         });
-        // Read as text first to avoid JSON parse crash on error responses
-        const text = await res.text();
-        let data: { code?: string; error?: string };
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error(`Server returned non-JSON (${res.status}): ${text.slice(0, 200)}`);
+
+        // Check for JSON error response (non-stream)
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const data = await res.json();
+          throw new Error(data.error || `v0 error (${res.status})`);
         }
-        if (data.error) throw new Error(data.error);
-        if (!data.code) throw new Error("No code returned from v0");
-        onUpdate({ appCode: data.code, appEditHistory: undoStack });
+
+        const fullCode = await readV0Stream(res, setStreamingCode);
+        const cleanedCode = extractCode(fullCode);
+        if (!cleanedCode) throw new Error("v0 returned empty code");
+        onUpdate({ appCode: cleanedCode, appEditHistory: undoStack });
+        setStreamingCode("");
       } catch (err) {
         console.error("App generation failed:", err);
         setGenError(err instanceof Error ? err.message : "Generation failed");
+        setStreamingCode("");
       } finally {
         setGenerating(false);
       }
@@ -187,6 +254,7 @@ export function AppBuilder({
     async (instruction: string) => {
       if (!appCode || !instruction.trim()) return;
       setEditing(true);
+      setStreamingCode("");
       setGenError(null);
       setRenderError(null);
       const newUndoStack = [...undoStack.slice(-19), appCode];
@@ -197,21 +265,24 @@ export function AppBuilder({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: instruction, existingCode: appCode }),
         });
-        const text = await res.text();
-        let data: { code?: string; error?: string };
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error(`Server returned non-JSON (${res.status}): ${text.slice(0, 200)}`);
+
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const data = await res.json();
+          throw new Error(data.error || `v0 error (${res.status})`);
         }
-        if (data.error) throw new Error(data.error);
-        if (!data.code) throw new Error("No code returned from v0");
-        onUpdate({ appCode: data.code, appEditHistory: newUndoStack });
+
+        const fullCode = await readV0Stream(res, setStreamingCode);
+        const cleanedCode = extractCode(fullCode);
+        if (!cleanedCode) throw new Error("v0 returned empty code");
+        onUpdate({ appCode: cleanedCode, appEditHistory: newUndoStack });
         setEditInput("");
+        setStreamingCode("");
       } catch (err) {
         console.error("App edit failed:", err);
         setGenError(err instanceof Error ? err.message : "Edit failed");
         setUndoStack((prev) => prev.slice(0, -1));
+        setStreamingCode("");
       } finally {
         setEditing(false);
       }
@@ -268,18 +339,18 @@ export function AppBuilder({
     );
   }
 
-  // Generating state
+  // Generating state — show streaming code
   if (generating) {
     return (
       <Card className="p-0 mb-6 overflow-hidden">
-        <div className="flex flex-col items-center justify-center py-20 px-6">
-          <div className="animate-spin w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full mb-4" />
-          <p className="text-gray-700 font-medium">
-            Building your app with v0...
-          </p>
-          <p className="text-gray-400 text-sm mt-1">
-            This takes 15-30 seconds
-          </p>
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
+          <span className="w-4 h-4 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm font-medium text-gray-700">Building your app with v0...</span>
+        </div>
+        <div className="bg-gray-950 p-4 overflow-auto" style={{ height: "500px" }}>
+          <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all">
+            {streamingCode || "Waiting for v0 response..."}
+          </pre>
         </div>
       </Card>
     );
@@ -393,9 +464,18 @@ export function AppBuilder({
 
       {/* Editing indicator */}
       {editing && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border-t border-blue-200 text-xs text-blue-700">
-          <span className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          Applying changes with v0... (15-30 seconds)
+        <div className="px-4 py-2 bg-blue-50 border-t border-blue-200">
+          <div className="flex items-center gap-2 text-xs text-blue-700">
+            <span className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            Applying changes with v0...
+          </div>
+          {streamingCode && (
+            <div className="mt-2 bg-gray-950 rounded-md p-2 max-h-24 overflow-auto">
+              <pre className="text-[10px] text-green-400 font-mono whitespace-pre-wrap break-all">
+                {streamingCode.slice(-500)}
+              </pre>
+            </div>
+          )}
         </div>
       )}
 

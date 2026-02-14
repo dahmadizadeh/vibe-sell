@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   if (!process.env.V0_API_KEY) {
@@ -43,17 +43,14 @@ Use only React hooks. No external package imports. No Next.js router. No fetch c
   ];
 
   console.log("[v0] Request:", {
-    url: "https://api.v0.dev/v1/chat/completions",
     model: "v0-1.5-md",
-    hasApiKey: !!process.env.V0_API_KEY,
-    keyPrefix: process.env.V0_API_KEY?.substring(0, 8) + "...",
-    messageCount: messages.length,
+    stream: true,
     isEdit,
     promptLength: prompt?.length,
   });
 
   try {
-    const res = await fetch("https://api.v0.dev/v1/chat/completions", {
+    const v0Response = await fetch("https://api.v0.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.V0_API_KEY}`,
@@ -61,55 +58,36 @@ Use only React hooks. No external package imports. No Next.js router. No fetch c
       },
       body: JSON.stringify({
         model: "v0-1.5-md",
-        stream: false,
+        stream: true,
         messages,
-        max_completion_tokens: 32000,
+        max_completion_tokens: 16000,
       }),
     });
 
-    // Always read as text first so we can log the full response
-    const rawText = await res.text();
-    console.log("[v0] Raw response status:", res.status);
-    console.log("[v0] Raw response body:", rawText.slice(0, 1000));
-
-    if (!res.ok) {
-      console.error("[v0] API error:", res.status, rawText);
+    if (!v0Response.ok) {
+      const errorText = await v0Response.text();
+      console.error("[v0] API error:", v0Response.status, errorText);
       return NextResponse.json(
-        { error: `v0 error (${res.status}): ${rawText.slice(0, 500)}` },
-        { status: res.status }
+        { error: `v0 error (${v0Response.status}): ${errorText.slice(0, 500)}` },
+        { status: v0Response.status }
       );
     }
 
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      console.error("[v0] Failed to parse JSON. Raw text:", rawText.slice(0, 500));
+    if (!v0Response.body) {
       return NextResponse.json(
-        { error: `v0 returned non-JSON: ${rawText.slice(0, 300)}` },
+        { error: "v0 returned no response body" },
         { status: 500 }
       );
     }
 
-    const generatedCode = data.choices?.[0]?.message?.content || "";
-
-    if (!generatedCode) {
-      console.error("[v0] Empty response from API. Full response:", rawText.slice(0, 500));
-      return NextResponse.json(
-        { error: "v0 returned an empty response" },
-        { status: 500 }
-      );
-    }
-
-    // Strip markdown code fences if present
-    const cleanCode = generatedCode
-      .replace(/^```(?:tsx|jsx|javascript|js|react)?\s*\n?/gm, "")
-      .replace(/```\s*$/gm, "")
-      .trim();
-
-    console.log("[v0] Generated code length:", cleanCode.length);
-
-    return NextResponse.json({ code: cleanCode });
+    // Pass the SSE stream directly through to the client
+    return new Response(v0Response.body, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[v0] Fetch error:", message);
