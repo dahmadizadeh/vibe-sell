@@ -3,13 +3,13 @@ import "./globals.css";
 import { NavBar } from "@/components/NavBar";
 
 export const metadata: Metadata = {
-  title: "Vibe & Sell — 5 minutes from idea to first customer",
+  title: "Vibe & Sell — Build Product. Talk to Users.",
   description:
-    "Build your app, analyze your market, find 100 real customers, and write your launch plan. All in under 5 minutes.",
+    "Build your app, find real people who need it, have conversations, and track your path to product-market fit. Powered by Crustdata.",
   openGraph: {
-    title: "Vibe & Sell — 5 minutes from idea to first customer",
+    title: "Vibe & Sell — Build Product. Talk to Users.",
     description:
-      "Build your app, analyze your market, find 100 real customers, and write your launch plan. All in under 5 minutes.",
+      "Build your app, find real people who need it, have conversations, and track your path to product-market fit. Powered by Crustdata.",
   },
 };
 
