@@ -171,6 +171,7 @@ export default function LandingPage() {
   return (
     <div className="bg-white">
       <style jsx global>{`
+        html { scroll-behavior: smooth; }
         @keyframes pulse-subtle {
           0%, 100% { box-shadow: 0 0 0 0 rgba(46, 117, 182, 0.4); }
           50% { box-shadow: 0 0 0 8px rgba(46, 117, 182, 0); }
@@ -179,6 +180,10 @@ export default function LandingPage() {
           0% { background-position: 0% 50%; }
           50% { background-position: 100% 50%; }
           100% { background-position: 0% 50%; }
+        }
+        @keyframes slow-bounce {
+          0%, 100% { transform: translateY(0) translateX(-50%); }
+          50% { transform: translateY(8px) translateX(-50%); }
         }
       `}</style>
 
@@ -196,12 +201,17 @@ export default function LandingPage() {
           </div>
           <span className="font-bold text-white text-base">Vibe &amp; Sell</span>
         </a>
-        <button
-          onClick={() => router.push("/create")}
-          className="px-4 py-2 text-sm font-medium text-white bg-[#2E75B6] hover:bg-[#245f99] rounded-lg transition-colors"
-        >
-          Launch Your Idea &rarr;
-        </button>
+        <div className="flex items-center gap-6">
+          <a href="#features" className="text-sm text-slate-400 hover:text-white transition-colors hidden sm:block">Features</a>
+          <a href="#how-it-works" className="text-sm text-slate-400 hover:text-white transition-colors hidden sm:block">How It Works</a>
+          <a href="https://crustdata.com" target="_blank" rel="noopener noreferrer" className="text-sm text-slate-400 hover:text-white transition-colors hidden sm:block">Crustdata &nearr;</a>
+          <button
+            onClick={() => router.push("/create")}
+            className="px-4 py-2 text-sm font-medium text-white bg-[#2E75B6] hover:bg-[#245f99] rounded-lg transition-colors"
+          >
+            Launch Your Idea &rarr;
+          </button>
+        </div>
       </nav>
 
       {/* ─── SECTION 1: HERO ─────────────────────────────────────────────────── */}
@@ -235,13 +245,26 @@ export default function LandingPage() {
           <HeroInput dark />
 
           <p className="mt-4 text-sm text-slate-500">
-            No signup. No credit card. Just describe what you want to build.
+            No signup. No credit card. Powered by{" "}
+            <a href="https://crustdata.com" target="_blank" rel="noopener noreferrer" className="text-slate-400 underline underline-offset-2 hover:text-white transition-colors">
+              Crustdata&apos;s 700M+ professional profiles
+            </a>.
           </p>
+        </div>
+
+        {/* Scroll indicator */}
+        <div
+          className="absolute bottom-8 left-1/2 flex flex-col items-center gap-2 cursor-pointer"
+          style={{ animation: "slow-bounce 2.5s ease-in-out infinite" }}
+          onClick={() => document.getElementById("demo")?.scrollIntoView({ behavior: "smooth" })}
+        >
+          <span className="text-xs text-slate-500">See how it works</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-500"><path d="m6 9 6 6 6-6"/></svg>
         </div>
       </section>
 
       {/* ─── SECTION 2: THE DEMO ─────────────────────────────────────────────── */}
-      <section className="bg-slate-950 px-4 pb-20 pt-4">
+      <section id="demo" className="bg-slate-950 px-4 pb-20 pt-4">
         <Section>
           <div className="max-w-4xl mx-auto" style={{ perspective: "1200px" }}>
             <div
@@ -456,12 +479,19 @@ export default function LandingPage() {
               Building is solved. The hard part is what comes after.{" "}
               <span className="text-slate-900 font-semibold">That&apos;s where we start.</span>
             </p>
+            <p className="text-center text-xs text-slate-400 mt-3 max-w-lg mx-auto">
+              Vibe &amp; Sell searches{" "}
+              <a href="https://crustdata.com" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-slate-600 transition-colors">
+                Crustdata&apos;s database of 700M+ professionals
+              </a>{" "}
+              to find people who actually need what you&apos;re building &mdash; not random contacts, but the right ones.
+            </p>
           </div>
         </Section>
       </section>
 
       {/* ─── SECTION 4: WHAT YOU GET ─────────────────────────────────────────── */}
-      <section className="bg-slate-50 px-4 py-20">
+      <section id="features" className="bg-slate-50 px-4 py-20">
         <div className="max-w-5xl mx-auto">
           <Section>
             <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-3">
@@ -574,8 +604,67 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ─── SECTION 4.5: HOW WE FIND REAL PEOPLE ──────────────────────────── */}
+      <section className="bg-white px-4 py-20 border-t border-slate-100">
+        <div className="max-w-4xl mx-auto">
+          <Section>
+            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-3">
+              How we find real people
+            </h2>
+            <p className="text-center text-slate-500 mb-12 max-w-lg mx-auto">
+              Not scraped lists. Not random leads. Real professionals matched to your product, powered by{" "}
+              <a href="https://crustdata.com" target="_blank" rel="noopener noreferrer" className="text-[#2E75B6] underline underline-offset-2 hover:text-[#245f99] transition-colors">
+                Crustdata
+              </a>.
+            </p>
+          </Section>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Section delay={0}>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center">
+                <div className="text-3xl mb-3">&#x1F465;</div>
+                <h3 className="font-semibold text-slate-900 mb-2">700M+ Professional Profiles</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Names, titles, companies, seniority levels, and verified business emails across every industry and region.
+                </p>
+              </div>
+            </Section>
+
+            <Section delay={100}>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center">
+                <div className="text-3xl mb-3">&#x1F4C8;</div>
+                <h3 className="font-semibold text-slate-900 mb-2">Real-Time Company Signals</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Headcount growth, funding rounds, job openings, and tech stack changes &mdash; so you reach companies at the right moment.
+                </p>
+              </div>
+            </Section>
+
+            <Section delay={200}>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center">
+                <div className="text-3xl mb-3">&#x1F50D;</div>
+                <h3 className="font-semibold text-slate-900 mb-2">Smart Filtering</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  AI builds the perfect search query from your app&apos;s value proposition &mdash; matching industry, role, seniority, and company size.
+                </p>
+              </div>
+            </Section>
+          </div>
+
+          <Section delay={300}>
+            <p className="text-center text-xs text-slate-400 mt-8">
+              Powered by{" "}
+              <a href="https://crustdata.com" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-slate-600 transition-colors">
+                Crustdata
+              </a>{" "}
+              &mdash; the data layer behind top GTM teams.
+            </p>
+          </Section>
+        </div>
+      </section>
+
       {/* ─── SECTION 5: HOW IT WORKS ─────────────────────────────────────────── */}
-      <section className="bg-white px-4 py-20">
+      <section id="how-it-works" className="bg-slate-50 px-4 py-20">
         <div className="max-w-4xl mx-auto">
           <Section>
             <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 text-center mb-14">
@@ -725,15 +814,24 @@ export default function LandingPage() {
       </section>
 
       {/* ─── FOOTER ──────────────────────────────────────────────────────────── */}
-      <footer className="bg-slate-950 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          <span>Vibe &amp; Sell by Crustdata</span>
-        </div>
-        <div className="flex items-center gap-4 text-xs text-slate-600">
-          <a href="https://docs.crustdata.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors">API Docs</a>
-          <a href="https://github.com/crustdata" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors">GitHub</a>
-          <a href="https://twitter.com/craborat" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors">Twitter</a>
+      <footer className="bg-slate-950 px-6 py-5">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex flex-col items-center sm:items-start gap-1">
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <span>Vibe &amp; Sell &middot; A{" "}
+                <a href="https://crustdata.com" target="_blank" rel="noopener noreferrer" className="text-slate-300 hover:text-white transition-colors">Crustdata</a>{" "}
+                Product
+              </span>
+            </div>
+            <span className="text-xs text-slate-600">Real people. Real companies. Real signals.</span>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-slate-600">
+            <a href="https://crustdata.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors">Crustdata</a>
+            <a href="https://docs.crustdata.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors">API Docs</a>
+            <a href="https://github.com/crustdata" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors">GitHub</a>
+            <a href="https://twitter.com/craborat" target="_blank" rel="noopener noreferrer" className="hover:text-slate-400 transition-colors">Twitter</a>
+          </div>
         </div>
       </footer>
     </div>
