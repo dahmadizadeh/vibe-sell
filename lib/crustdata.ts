@@ -56,10 +56,10 @@ export async function searchPeople(
   if (!API_KEY) throw new Error("CRUSTDATA_API_KEY not set");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const res = await fetch(`${BASE_URL}/screener/person/search/`, {
+    const res = await fetch(`${BASE_URL}/screener/persondb/search`, {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({
@@ -70,7 +70,9 @@ export async function searchPeople(
     });
 
     if (!res.ok) {
-      throw new Error(`Crustdata search failed: ${res.status} ${res.statusText}`);
+      const body = await res.text();
+      console.error("[crustdata] searchPeople error response:", res.status, body.slice(0, 500));
+      throw new Error(`Crustdata search failed: ${res.status} ${res.statusText} — ${body.slice(0, 200)}`);
     }
 
     const data = await res.json();
@@ -126,7 +128,7 @@ export async function searchCompany(
   if (!API_KEY) throw new Error("CRUSTDATA_API_KEY not set");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 30000);
 
   try {
     const res = await fetch(`${BASE_URL}/screener/company/search`, {
