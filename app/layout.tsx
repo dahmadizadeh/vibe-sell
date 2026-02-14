@@ -3,9 +3,14 @@ import "./globals.css";
 import { NavBar } from "@/components/NavBar";
 
 export const metadata: Metadata = {
-  title: "Vibe & Sell — Build Your Product, Find Your Customers",
+  title: "Vibe & Sell — 5 minutes from idea to first customer",
   description:
-    "Describe your product and get real customers with personalized emails — or create a pitch page for any target company.",
+    "Build your app, analyze your market, find 100 real customers, and write your launch plan. All in under 5 minutes.",
+  openGraph: {
+    title: "Vibe & Sell — 5 minutes from idea to first customer",
+    description:
+      "Build your app, analyze your market, find 100 real customers, and write your launch plan. All in under 5 minutes.",
+  },
 };
 
 export default function RootLayout({

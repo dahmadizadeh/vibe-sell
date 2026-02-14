@@ -42,7 +42,7 @@ export default function ProjectPage() {
 
   useEffect(() => {
     if (hydrated && !project) {
-      router.push("/");
+      router.push("/create");
     }
   }, [hydrated, project, router]);
 

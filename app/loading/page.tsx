@@ -434,7 +434,7 @@ function LoadingContent() {
 
     const proj = getProject(projectId);
     if (!proj) {
-      router.push("/");
+      router.push("/create");
       return;
     }
 

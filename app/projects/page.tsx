@@ -71,7 +71,7 @@ export default function ProjectsPage() {
         <div className="text-center py-20">
           <Rocket className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-500 text-lg mb-4">{COPY.workspaceEmpty}</p>
-          <Button onClick={() => router.push("/")}>
+          <Button onClick={() => router.push("/create")}>
             {COPY.workspaceGetStarted}
           </Button>
         </div>

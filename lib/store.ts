@@ -68,6 +68,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     saveProject(project);
     set((state) => ({ projects: [...state.projects, project], currentProjectId: id }));
+    // Increment landing page counter
+    try {
+      const prev = parseInt(localStorage.getItem("vibe_sell_app_count") || "847", 10);
+      localStorage.setItem("vibe_sell_app_count", String(prev + 1));
+    } catch {}
     return id;
   },
 
