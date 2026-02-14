@@ -12,19 +12,26 @@ interface CrustdataPersonRecord {
   headline?: string;
   region?: string;
   linkedin_profile_url?: string;
-  profile_photo_url?: string;
-  profile_pic_url?: string;
-  avatar_url?: string;
+  linkedin_flagship_url?: string;
+  profile_picture_url?: string;
   current_employers?: Array<{
-    title?: string;
-    company_name?: string;
-    company_website_domain?: string;
+    employee_title?: string;
+    employer_name?: string;
+    employer_company_website_domain?: string[];
     company_headcount_latest?: number;
     company_industries?: string[];
     seniority_level?: string;
+    function_category?: string;
+    business_emails?: {
+      current_work_email?: string;
+      recommended_personal_email?: string;
+    } | string[];
+    // Legacy field names (some endpoints may still return these)
+    title?: string;
+    company_name?: string;
+    company_website_domain?: string;
     department?: string;
     business_email?: string;
-    business_email_verified?: boolean;
   }>;
 }
 
@@ -120,11 +127,23 @@ export async function enrichPeople(
     const profiles: CrustdataPersonRecord[] = data.profiles || data.results || data || [];
 
     for (const p of profiles) {
-      const email = p.current_employers?.[0]?.business_email;
-      if (p.linkedin_profile_url) {
+      const employer = p.current_employers?.[0];
+      let email: string | undefined;
+      if (employer?.business_emails) {
+        if (Array.isArray(employer.business_emails)) {
+          email = employer.business_emails[0] || undefined;
+        } else if (typeof employer.business_emails === "object") {
+          email = employer.business_emails.current_work_email || employer.business_emails.recommended_personal_email || undefined;
+        }
+      }
+      if (!email && employer?.business_email) {
+        email = employer.business_email;
+      }
+      const linkedinUrl = p.linkedin_profile_url || p.linkedin_flagship_url;
+      if (linkedinUrl) {
         results.push({
-          linkedin_profile_url: p.linkedin_profile_url,
-          business_email: email || undefined,
+          linkedin_profile_url: linkedinUrl,
+          business_email: email,
         });
       }
     }
@@ -134,7 +153,8 @@ export async function enrichPeople(
 }
 
 export async function searchCompany(
-  companyName: string
+  companyName: string,
+  companyWebsite?: string
 ): Promise<CrustdataCompanyRecord | null> {
   if (!API_KEY) throw new Error("CRUSTDATA_API_KEY not set");
 
@@ -142,28 +162,29 @@ export async function searchCompany(
   const timeout = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const res = await fetch(`${BASE_URL}/screener/company/search`, {
+    const body: Record<string, string> = {};
+    if (companyWebsite) {
+      body.query_company_website = companyWebsite;
+    } else {
+      body.query_company_name = companyName;
+    }
+
+    const res = await fetch(`${BASE_URL}/screener/identify`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({
-        filters: {
-          op: "and",
-          conditions: [
-            { column: "company_name", type: "(.)", value: companyName },
-          ],
-        },
-        limit: 1,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
 
     if (!res.ok) {
-      throw new Error(`Crustdata company search failed: ${res.status}`);
+      throw new Error(`Crustdata company identify failed: ${res.status}`);
     }
 
     const data = await res.json();
-    const companies = data.companies || data.results || data || [];
-    return companies[0] || null;
+    // /screener/identify returns a single company or array
+    if (Array.isArray(data)) return data[0] || null;
+    if (data.company) return data.company;
+    return data || null;
   } finally {
     clearTimeout(timeout);
   }
@@ -184,16 +205,17 @@ export interface CrustdataLinkedInPost {
 
 function mapRawPost(raw: Record<string, unknown>): CrustdataLinkedInPost {
   return {
-    authorName: (raw.author_name || raw.name || raw.profile_name || raw.author?.toString() || "") as string,
-    authorTitle: (raw.author_title || raw.headline || raw.author_headline || "") as string,
-    authorCompany: (raw.author_company || raw.company || raw.author_company_name || "") as string,
-    authorLinkedinUrl: (raw.author_linkedin_url || raw.author_url || raw.linkedin_url || raw.profile_url || "") as string,
-    authorPhotoUrl: (raw.author_profile_photo || raw.profile_image_url || raw.author_avatar || raw.avatar_url || "") as string || undefined,
-    content: (raw.text || raw.content || raw.body || raw.post_text || raw.description || "") as string,
-    date: (raw.posted_at || raw.date || raw.created_at || raw.published_date || raw.post_date || "") as string,
-    postUrl: (raw.post_url || raw.url || raw.linkedin_url || raw.link || "") as string || undefined,
-    likes: (raw.reactions_count || raw.total_reactions || raw.likes || raw.num_likes || 0) as number,
-    comments: (raw.comments_count || raw.total_comments || raw.comments || raw.num_comments || 0) as number,
+    // Crustdata fields first, then legacy fallbacks
+    authorName: (raw.actor_name || raw.author_name || raw.name || "") as string,
+    authorTitle: (raw.actor_title || raw.author_title || raw.headline || "") as string,
+    authorCompany: (raw.actor_company || raw.author_company || raw.company || "") as string,
+    authorLinkedinUrl: (raw.actor_linkedin_url || raw.author_linkedin_url || raw.profile_url || "") as string,
+    authorPhotoUrl: (raw.actor_profile_picture_url || raw.author_profile_photo || "") as string || undefined,
+    content: (raw.text || raw.content || raw.body || "") as string,
+    date: (raw.date_posted || raw.posted_at || raw.date || "") as string,
+    postUrl: (raw.share_url || raw.post_url || raw.url || "") as string || undefined,
+    likes: (raw.total_reactions || raw.reactions_count || raw.likes || 0) as number,
+    comments: (raw.total_comments || raw.comments_count || raw.comments || 0) as number,
   };
 }
 
@@ -206,39 +228,57 @@ export async function searchLinkedInPosts(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
 
+  // Crustdata expects a single keyword string with OR operators, not an array
+  const keywordString = keywords.join(" OR ");
+  const pages = Math.ceil(limit / 10); // ~10 results per page
+
   try {
-    const res = await fetch(`${BASE_URL}/screener/linkedin_posts/keyword_search/`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ keywords, limit }),
-      signal: controller.signal,
-    });
+    const allPosts: CrustdataLinkedInPost[] = [];
 
-    console.log("[crustdata] searchLinkedInPosts status:", res.status);
+    for (let page = 1; page <= pages; page++) {
+      const res = await fetch(`${BASE_URL}/screener/linkedin_posts/keyword_search/`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          keyword: keywordString,
+          page,
+          date_posted: "past-month",
+          sort_by: "relevance",
+        }),
+        signal: controller.signal,
+      });
 
-    if (!res.ok) {
-      const body = await res.text();
-      console.error("[crustdata] searchLinkedInPosts error:", body.slice(0, 500));
-      throw new Error(`Crustdata LinkedIn posts search failed: ${res.status}`);
+      console.log("[crustdata] searchLinkedInPosts page", page, "status:", res.status);
+
+      if (!res.ok) {
+        const body = await res.text();
+        console.error("[crustdata] searchLinkedInPosts error:", body.slice(0, 500));
+        throw new Error(`Crustdata LinkedIn posts search failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (page === 1) {
+        console.log("[crustdata] searchLinkedInPosts response keys:", Object.keys(data));
+      }
+
+      const rawPosts: Record<string, unknown>[] = data.posts || data.results || (Array.isArray(data) ? data : []);
+      if (rawPosts.length > 0 && page === 1) {
+        console.log("[crustdata] First raw post keys:", Object.keys(rawPosts[0]));
+        console.log("[crustdata] First raw post sample:", JSON.stringify(rawPosts[0], null, 2).slice(0, 500));
+      }
+
+      const mapped = rawPosts.map(mapRawPost);
+      const valid = mapped.filter(
+        (p) => p.content && p.content.length > 20 && p.authorName && p.authorName !== "Unknown"
+      );
+      allPosts.push(...valid);
+
+      // Stop early if we have enough or if no results returned
+      if (rawPosts.length === 0 || allPosts.length >= limit) break;
     }
 
-    const data = await res.json();
-    console.log("[crustdata] searchLinkedInPosts response keys:", Object.keys(data));
-
-    const rawPosts: Record<string, unknown>[] = data.posts || data.results || (Array.isArray(data) ? data : []);
-    if (rawPosts.length > 0) {
-      console.log("[crustdata] First raw post keys:", Object.keys(rawPosts[0]));
-      console.log("[crustdata] First raw post sample:", JSON.stringify(rawPosts[0], null, 2).slice(0, 500));
-    }
-
-    // Map to normalized format and filter out empty posts
-    const mapped = rawPosts.map(mapRawPost);
-    const valid = mapped.filter(
-      (p) => p.content && p.content.length > 20 && p.authorName && p.authorName !== "Unknown"
-    );
-
-    console.log("[crustdata] searchLinkedInPosts:", rawPosts.length, "raw ->", valid.length, "valid posts");
-    return valid;
+    console.log("[crustdata] searchLinkedInPosts: total", allPosts.length, "valid posts");
+    return allPosts.slice(0, limit);
   } finally {
     clearTimeout(timeout);
   }
@@ -256,11 +296,26 @@ export function mapPersonToContact(
 
   const name = person.name || "Unknown";
   const firstName = person.first_name || name.split(" ")[0] || "Unknown";
-  const title = employer.title || "Unknown Title";
-  const company = normalizeCompanyName(employer.company_name || employer.company_website_domain || "Unknown");
+  const title = employer.employee_title || employer.title || "Unknown Title";
+  const companyName = employer.employer_name || employer.company_name || "";
+  const companyDomain = employer.employer_company_website_domain?.[0] || employer.company_website_domain || "";
+  const company = normalizeCompanyName(companyName || companyDomain || "Unknown");
   const headcount = employer.company_headcount_latest || 0;
   const industry = employer.company_industries?.[0] || "Technology";
-  const photoUrl = person.profile_photo_url || person.profile_pic_url || person.avatar_url;
+  const photoUrl = person.profile_picture_url;
+
+  // Extract email from business_emails (object or array) with legacy fallback
+  let email: string | undefined;
+  if (employer.business_emails) {
+    if (Array.isArray(employer.business_emails)) {
+      email = employer.business_emails[0] || undefined;
+    } else if (typeof employer.business_emails === "object") {
+      email = employer.business_emails.current_work_email || employer.business_emails.recommended_personal_email || undefined;
+    }
+  }
+  if (!email && employer.business_email) {
+    email = employer.business_email;
+  }
 
   let matchReason: string;
   if (matchReasonTemplate) {
@@ -281,12 +336,12 @@ export function mapPersonToContact(
     company,
     companySize: headcount,
     industry,
-    department: employer.department,
+    department: employer.function_category || employer.department,
     roleTag: inferRoleTag(title, employer.seniority_level || ""),
     matchReason,
     relevance: "strong",
-    linkedinUrl: person.linkedin_profile_url || "",
-    email: employer.business_email || undefined,
+    linkedinUrl: person.linkedin_profile_url || person.linkedin_flagship_url || "",
+    email,
     profilePhotoUrl: photoUrl || undefined,
   };
 }
@@ -322,8 +377,10 @@ function generateMatchReason(person: CrustdataPersonRecord): string {
   if (!employer) return "Matches targeting criteria";
 
   const parts: string[] = [];
-  if (employer.title) parts.push(employer.title);
-  if (employer.company_name) parts.push(`at ${employer.company_name}`);
+  const title = employer.employee_title || employer.title;
+  const companyName = employer.employer_name || employer.company_name;
+  if (title) parts.push(title);
+  if (companyName) parts.push(`at ${companyName}`);
   if (employer.company_headcount_latest) {
     parts.push(`(${employer.company_headcount_latest} employees)`);
   }

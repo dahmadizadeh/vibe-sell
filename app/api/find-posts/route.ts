@@ -22,10 +22,13 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `Generate 3-5 LinkedIn search keywords for finding posts relevant to "${appName}" in "${industry}": "${description}".
+          content: `Generate 3-5 short LinkedIn search keyword phrases for finding posts relevant to "${appName}" in "${industry}": "${description}".
 
-Return ONLY a JSON array of strings, e.g.: ["keyword1", "keyword2", "keyword3"]
-No markdown fences. No explanation. Just the JSON array.`,
+Each keyword should be 1-3 words. They will be joined with OR for a Crustdata LinkedIn post search.
+Good examples: ["customer retention", "SaaS churn", "user onboarding"]
+Bad examples: ["how to reduce customer churn in SaaS companies"] (too long)
+
+Return ONLY a JSON array of strings. No markdown fences. No explanation. Just the JSON array.`,
         },
       ],
     });
