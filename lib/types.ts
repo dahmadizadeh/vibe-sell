@@ -18,6 +18,8 @@ export interface Project {
   pitchPages?: PitchPage[];
   targetCompanies?: string[];
   dataSource?: 'live' | 'mock';
+  viabilityAnalysis?: ViabilityAnalysis;
+  audienceGroups?: AudienceGroup[];
 }
 
 export interface Targeting {
@@ -88,6 +90,44 @@ export interface ProjectStats {
 }
 
 export type DraftStatus = 'none' | 'drafted' | 'sent';
+
+export interface Competitor {
+  name: string;
+  description: string;
+  funding?: string;
+  url?: string;
+}
+
+export interface ViabilityAnalysis {
+  overallScore: number;
+  verdict: 'Strong' | 'Promising' | 'Needs Work' | 'Risky';
+  dimensions: {
+    marketDemand: { score: number; reasoning: string };
+    competition: { score: number; reasoning: string; competitors: Competitor[] };
+    monetization: { score: number; reasoning: string; suggestedModels: string[] };
+    feasibility: { score: number; reasoning: string };
+    timing: { score: number; reasoning: string };
+  };
+  summary: string;
+  topRisks: string[];
+  topOpportunities: string[];
+}
+
+export interface AudienceGroup {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  searchFilters: {
+    titles: string[];
+    industries: string[];
+    keywords?: string[];
+    companies?: string[];
+    regions: string[];
+  };
+  count: number;
+  contacts?: Contact[];
+}
 
 export interface UserProfile {
   name: string;

@@ -1,40 +1,46 @@
 "use client";
 
 import { useEffect, useRef, useMemo } from "react";
-import { Loader2, Sparkles, Users, Check } from "lucide-react";
+import { Loader2, Check } from "lucide-react";
 import { AppPreview } from "./AppPreview";
+
+interface StepDef {
+  key: string;
+  label: string;
+}
 
 interface CodeGenerationProps {
   streamedCode: string;
-  status: "generating" | "app_ready" | "targeting" | "finding_customers" | "complete";
+  status: string;
   statusMessage: string;
   appName?: string;
   appTagline?: string;
   reactCode?: string;
+  steps?: StepDef[];
 }
 
-/**
- * Try to extract the reactCode value from the partial JSON stream.
- * Returns the code if we can find it, otherwise returns null.
- */
+const DEFAULT_STEPS: StepDef[] = [
+  { key: "generating", label: "Build App" },
+  { key: "analyzing", label: "Analyze" },
+  { key: "finding_customers", label: "Find People" },
+  { key: "complete", label: "Done" },
+];
+
 function extractCodeFromStream(raw: string): string | null {
-  // Look for "reactCode": " in the stream
   const marker = '"reactCode"';
   const idx = raw.indexOf(marker);
   if (idx === -1) return null;
 
-  // Find the opening quote of the value
   const afterMarker = raw.substring(idx + marker.length);
   const colonIdx = afterMarker.indexOf('"');
   if (colonIdx === -1) return null;
 
-  // Extract the string value (handling escaped characters)
   const valueStart = idx + marker.length + colonIdx + 1;
   let code = "";
   let i = valueStart;
   while (i < raw.length) {
     const ch = raw[i];
-    if (ch === '"' && raw[i - 1] !== "\\") break; // End of string
+    if (ch === '"' && raw[i - 1] !== "\\") break;
     if (ch === "\\" && i + 1 < raw.length) {
       const next = raw[i + 1];
       if (next === "n") { code += "\n"; i += 2; continue; }
@@ -56,32 +62,44 @@ export function CodeGeneration({
   appName,
   appTagline,
   reactCode,
+  steps: stepsProp,
 }: CodeGenerationProps) {
   const codeRef = useRef<HTMLPreElement>(null);
+  const steps = stepsProp || DEFAULT_STEPS;
 
-  // Show formatted code once available, otherwise try to extract from stream
   const displayCode = useMemo(() => {
     if (reactCode) return reactCode;
     const extracted = extractCodeFromStream(streamedCode);
     if (extracted) return extracted;
-    // During early streaming, show a placeholder
     if (streamedCode.length < 50) return "// Generating your app...\n";
-    // Show extracted code or indicate we're still parsing
     return "// Building app components...\n// " + (appName || "Please wait") + "\n";
   }, [reactCode, streamedCode, appName]);
 
-  // Auto-scroll code to bottom
   useEffect(() => {
     if (codeRef.current) {
       codeRef.current.scrollTop = codeRef.current.scrollHeight;
     }
   }, [displayCode]);
 
-  const showPreview = status === "app_ready" || status === "targeting" || status === "finding_customers" || status === "complete";
+  const showPreview =
+    status === "app_ready" ||
+    status === "analyzing" ||
+    status === "targeting" ||
+    status === "finding_customers" ||
+    status === "complete";
   const isStreaming = status === "generating" && !reactCode;
-
-  // Streaming character count for visual feedback
   const charCount = streamedCode.length;
+
+  // Determine which steps are done/active
+  const stepKeys = steps.map((s) => s.key);
+  const currentIdx = stepKeys.indexOf(status);
+  // "app_ready" is a sub-state of "generating", treat it as generating done
+  const effectiveIdx =
+    status === "app_ready"
+      ? stepKeys.indexOf("analyzing") >= 0
+        ? stepKeys.indexOf("analyzing")
+        : stepKeys.indexOf("generating") + 1
+      : currentIdx;
 
   return (
     <div className="w-full max-w-5xl mx-auto">
@@ -98,41 +116,55 @@ export function CodeGeneration({
           <span className="text-sm font-medium text-gray-700">{statusMessage}</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          {isStreaming && (
+          {isStreaming && charCount > 0 && (
             <span className="text-xs text-gray-400 font-mono">
-              {charCount > 0 ? `${Math.round(charCount / 10) * 10} chars` : ""}
+              {Math.round(charCount / 10) * 10} chars
             </span>
           )}
           {appName && (
             <span className="text-sm text-gray-400">
-              {appName}{appTagline ? ` — ${appTagline}` : ""}
+              {appName}{appTagline ? ` \u2014 ${appTagline}` : ""}
             </span>
           )}
         </div>
       </div>
 
       {/* Progress steps */}
-      <div className="flex items-center gap-6 mb-4 text-xs">
-        <Step
-          icon={<Sparkles className="w-3.5 h-3.5" />}
-          label="Build App"
-          done={status !== "generating"}
-          active={status === "generating"}
-        />
-        <StepDivider done={status !== "generating"} />
-        <Step
-          icon={<Users className="w-3.5 h-3.5" />}
-          label="Find Customers"
-          done={status === "finding_customers" || status === "complete"}
-          active={status === "targeting"}
-        />
-        <StepDivider done={status === "finding_customers" || status === "complete"} />
-        <Step
-          icon={<Check className="w-3.5 h-3.5" />}
-          label="Done"
-          done={status === "complete"}
-          active={false}
-        />
+      <div className="flex items-center gap-2 mb-4 text-xs flex-wrap">
+        {steps.map((step, i) => {
+          const isDone = effectiveIdx > i || status === "complete";
+          const isActive = effectiveIdx === i && status !== "complete";
+
+          return (
+            <div key={step.key} className="flex items-center gap-2">
+              {i > 0 && (
+                <div
+                  className={`w-6 h-px ${isDone ? "bg-brand-success" : "bg-gray-200"}`}
+                />
+              )}
+              <div
+                className={`flex items-center gap-1.5 ${
+                  isDone
+                    ? "text-brand-success"
+                    : isActive
+                    ? "text-brand-primary"
+                    : "text-gray-300"
+                }`}
+              >
+                {isDone ? (
+                  <div className="w-4 h-4 rounded-full bg-brand-success flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                  </div>
+                ) : isActive ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <div className="w-4 h-4 rounded-full border border-gray-200" />
+                )}
+                <span className="font-medium">{step.label}</span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Main content: code panel + optional preview */}
@@ -171,48 +203,5 @@ export function CodeGeneration({
         )}
       </div>
     </div>
-  );
-}
-
-function Step({
-  icon,
-  label,
-  done,
-  active,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  done: boolean;
-  active: boolean;
-}) {
-  return (
-    <div
-      className={`flex items-center gap-1.5 ${
-        done
-          ? "text-brand-success"
-          : active
-          ? "text-brand-primary"
-          : "text-gray-300"
-      }`}
-    >
-      {done ? (
-        <div className="w-4 h-4 rounded-full bg-brand-success flex items-center justify-center">
-          <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
-        </div>
-      ) : (
-        icon
-      )}
-      <span className="font-medium">{label}</span>
-    </div>
-  );
-}
-
-function StepDivider({ done }: { done: boolean }) {
-  return (
-    <div
-      className={`flex-1 h-px max-w-[40px] ${
-        done ? "bg-brand-success" : "bg-gray-200"
-      }`}
-    />
   );
 }

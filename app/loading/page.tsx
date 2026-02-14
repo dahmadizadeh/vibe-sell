@@ -7,7 +7,7 @@ import { LoadingSteps } from "@/components/LoadingSteps";
 import { CodeGeneration } from "@/components/CodeGeneration";
 import { useAppStore } from "@/lib/store";
 import { detectBuilderScenario, getBuilderMockData, getSellerMockData } from "@/lib/mock-data";
-import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft } from "@/lib/types";
+import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup } from "@/lib/types";
 
 // ─── Cache Helpers ───────────────────────────────────────────────────────────
 
@@ -44,6 +44,24 @@ function hashString(s: string): string {
   return Math.abs(hash).toString(36);
 }
 
+// ─── Builder Loading Steps ──────────────────────────────────────────────────
+
+type BuilderStep =
+  | "generating"
+  | "app_ready"
+  | "analyzing"
+  | "targeting"
+  | "finding_customers"
+  | "complete";
+
+const BUILDER_STEPS: { key: BuilderStep; label: string }[] = [
+  { key: "generating", label: "Build App" },
+  { key: "analyzing", label: "Analyze Viability" },
+  { key: "targeting", label: "Figure Out Who to Reach" },
+  { key: "finding_customers", label: "Find Real People" },
+  { key: "complete", label: "Done" },
+];
+
 // ─── Loading Content ─────────────────────────────────────────────────────────
 
 function LoadingContent() {
@@ -55,9 +73,7 @@ function LoadingContent() {
 
   // Builder UI state
   const [streamedCode, setStreamedCode] = useState("");
-  const [genStatus, setGenStatus] = useState<
-    "generating" | "app_ready" | "targeting" | "finding_customers" | "complete"
-  >("generating");
+  const [genStatus, setGenStatus] = useState<BuilderStep>("generating");
   const [statusMessage, setStatusMessage] = useState("Building your app...");
   const [appName, setAppName] = useState<string>();
   const [appTagline, setAppTagline] = useState<string>();
@@ -73,7 +89,7 @@ function LoadingContent() {
   // Animate code appearing character by character
   const animateCode = useCallback((code: string) => {
     let i = 0;
-    const chunkSize = 15; // characters per tick
+    const chunkSize = 15;
     const interval = setInterval(() => {
       i += chunkSize;
       if (i >= code.length) {
@@ -93,8 +109,10 @@ function LoadingContent() {
 
       let targeting: Targeting = mockData.targeting;
       let productPage: ProductPage = mockData.productPage;
+      let viabilityAnalysis: ViabilityAnalysis | undefined;
+      let audienceGroups: AudienceGroup[] | undefined;
 
-      // Step 1: Call analyze-idea API (regular JSON, not SSE)
+      // ── Step 1: Build the app ──────────────────────────────────────
       setGenStatus("generating");
       setStatusMessage("Building your app...");
 
@@ -107,90 +125,172 @@ function LoadingContent() {
         const result = await res.json();
 
         if (result.productPage?.reactCode) {
-          // Real AI response
           productPage = result.productPage;
           targeting = result.targeting || targeting;
 
-          // Show the code being "typed"
           setAppName(productPage.name);
           setAppTagline(productPage.tagline);
           setGenStatus("app_ready");
-          setStatusMessage(`${productPage.name} built! Finding your customers...`);
+          setStatusMessage(`${productPage.name} built!`);
 
-          // Animate code appearing
           animateCode(productPage.reactCode!);
           setReactCode(productPage.reactCode);
 
-          // Small delay so user sees the preview
-          await new Promise((r) => setTimeout(r, 3000));
+          await new Promise((r) => setTimeout(r, 2000));
         } else {
-          // Fallback response (mock data from server)
           if (result.targeting) targeting = result.targeting;
           if (result.productPage) productPage = result.productPage;
         }
       } catch (err) {
         console.error("analyze-idea fetch failed:", err);
-        // Keep mock data
       }
 
-      // Step 2: Find customers
+      // ── Step 2: Analyze viability + smart targeting (parallel) ─────
+      setGenStatus("analyzing");
+      setStatusMessage("Analyzing business viability...");
+
+      try {
+        const res = await fetch("/api/analyze-viability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description,
+            appName: productPage.name,
+          }),
+        });
+        const result = await res.json();
+
+        if (result.viabilityAnalysis) {
+          viabilityAnalysis = result.viabilityAnalysis;
+          setStatusMessage(
+            `${result.viabilityAnalysis.verdict} — ${result.viabilityAnalysis.overallScore}/100`
+          );
+        }
+
+        if (result.smartTargeting) {
+          targeting = result.smartTargeting.targeting || targeting;
+          audienceGroups = result.smartTargeting.audienceGroups;
+          setGenStatus("targeting");
+          setStatusMessage(
+            `Found ${audienceGroups?.length || 0} audience groups to target`
+          );
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      } catch (err) {
+        console.error("analyze-viability fetch failed:", err);
+      }
+
+      // ── Step 3: Find real people per audience group ────────────────
       setGenStatus("finding_customers");
       setStatusMessage("Searching 700M+ professionals...");
 
-      const cacheKey = `crustdata_contacts_builder_${hashString(JSON.stringify(targeting))}`;
-      let contacts: Contact[] | null = getCachedContacts(cacheKey);
-      let dataSource: "live" | "mock" = contacts ? "live" : "mock";
+      let allContacts: Contact[] = [];
+      let dataSource: "live" | "mock" = "mock";
 
-      if (!contacts) {
-        try {
-          const res = await fetch("/api/find-customers", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ targeting }),
-          });
-          const result = await res.json();
-          if (result.contacts && result.contacts.length > 0) {
-            contacts = result.contacts;
-            dataSource = result.dataSource || "live";
-            setCachedContacts(cacheKey, contacts!);
+      if (audienceGroups && audienceGroups.length > 0) {
+        // Search per audience group
+        for (const group of audienceGroups) {
+          setStatusMessage(`Finding ${group.name}...`);
+
+          const groupTargeting: Targeting = {
+            industries: group.searchFilters.industries,
+            companySize: targeting.companySize,
+            titles: group.searchFilters.titles,
+            regions: group.searchFilters.regions,
+            summary: group.description,
+          };
+
+          const cacheKey = `crustdata_contacts_builder_${hashString(JSON.stringify(groupTargeting))}`;
+          let contacts: Contact[] | null = getCachedContacts(cacheKey);
+
+          if (!contacts) {
+            try {
+              const res = await fetch("/api/find-customers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ targeting: groupTargeting }),
+              });
+              const result = await res.json();
+              if (result.contacts && result.contacts.length > 0) {
+                contacts = result.contacts.slice(0, group.count);
+                if (result.dataSource === "live") dataSource = "live";
+                setCachedContacts(cacheKey, contacts!);
+              }
+            } catch {}
+          } else {
+            dataSource = "live";
+            contacts = contacts.slice(0, group.count);
           }
-        } catch {}
+
+          if (contacts && contacts.length > 0) {
+            group.contacts = contacts;
+            allContacts.push(...contacts);
+          }
+        }
       }
 
-      if (!contacts || contacts.length === 0) {
-        contacts = mockData.contacts;
-        dataSource = "mock";
+      // Fallback: single search if no audience groups or no results
+      if (allContacts.length === 0) {
+        const cacheKey = `crustdata_contacts_builder_${hashString(JSON.stringify(targeting))}`;
+        let contacts: Contact[] | null = getCachedContacts(cacheKey);
+
+        if (!contacts) {
+          try {
+            const res = await fetch("/api/find-customers", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ targeting }),
+            });
+            const result = await res.json();
+            if (result.contacts && result.contacts.length > 0) {
+              contacts = result.contacts;
+              dataSource = result.dataSource || "live";
+              setCachedContacts(cacheKey, contacts!);
+            }
+          } catch {}
+        } else {
+          dataSource = "live";
+        }
+
+        if (!contacts || contacts.length === 0) {
+          allContacts = mockData.contacts;
+          dataSource = "mock";
+        } else {
+          allContacts = contacts;
+        }
       }
 
-      // Step 3: Generate emails — still mock for v1
+      // ── Step 4: Generate emails (mock for v1) ─────────────────────
       await fetch("/api/generate-emails", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode: "builder",
           context: { description, shareUrl: productPage.shareUrl },
-          contacts: contacts.slice(0, 3),
+          contacts: allContacts.slice(0, 3),
         }),
       }).catch(() => {});
 
+      // ── Done ───────────────────────────────────────────────────────
       setGenStatus("complete");
-      setStatusMessage(productPage.reactCode ? "Your app is ready!" : "Done!");
+      setStatusMessage("Your app is ready!");
 
       updateProject(pid, {
         targeting,
-        contacts,
+        contacts: allContacts,
         emailDrafts: mockData.emailDrafts,
         productPage,
         dataSource,
+        viabilityAnalysis,
+        audienceGroups,
         stats: {
-          contactsFound: contacts.length,
+          contactsFound: allContacts.length,
           emailsSent: 0,
           replies: 0,
           meetingsBooked: 0,
         },
       });
 
-      // Brief pause to show complete state
       await new Promise((r) => setTimeout(r, 1500));
       router.push(`/project/${pid}`);
     },
@@ -308,6 +408,7 @@ function LoadingContent() {
           appName={appName}
           appTagline={appTagline}
           reactCode={reactCode}
+          steps={BUILDER_STEPS}
         />
       </div>
     );
