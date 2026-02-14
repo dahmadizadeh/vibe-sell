@@ -2,11 +2,9 @@ import type { Contact, RoleTag } from "./types";
 
 // ─── Internal Types ──────────────────────────────────────────────────────────
 
-interface CrustdataFilter {
-  column: string;
-  type: string;
-  value: string | string[] | number;
-}
+type CrustdataFilter =
+  | { column: string; type: string; value: string | string[] | number }
+  | { op: string; conditions: CrustdataFilter[] };
 
 interface CrustdataPersonRecord {
   name?: string;
@@ -58,25 +56,35 @@ export async function searchPeople(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
 
+  const requestBody = {
+    filters: { op: "and", conditions },
+    limit,
+  };
+
+  console.log("[crustdata] searchPeople request URL:", `${BASE_URL}/screener/persondb/search`);
+  console.log("[crustdata] searchPeople request body:", JSON.stringify(requestBody, null, 2));
+  console.log("[crustdata] API key present:", !!API_KEY, "length:", API_KEY?.length);
+
   try {
     const res = await fetch(`${BASE_URL}/screener/persondb/search`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({
-        filters: { op: "and", conditions },
-        limit,
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
 
+    console.log("[crustdata] searchPeople response status:", res.status, res.statusText);
+
     if (!res.ok) {
       const body = await res.text();
-      console.error("[crustdata] searchPeople error response:", res.status, body.slice(0, 500));
-      throw new Error(`Crustdata search failed: ${res.status} ${res.statusText} — ${body.slice(0, 200)}`);
+      console.error("[crustdata] searchPeople error body:", body.slice(0, 1000));
+      throw new Error(`Crustdata search failed: ${res.status} ${res.statusText} — ${body.slice(0, 300)}`);
     }
 
     const data = await res.json();
-    return data.profiles || data.results || data || [];
+    const profiles = data.profiles || data.results || data || [];
+    console.log("[crustdata] searchPeople returned", profiles.length, "profiles. Response keys:", Object.keys(data));
+    return profiles;
   } finally {
     clearTimeout(timeout);
   }
@@ -242,22 +250,3 @@ export function normalizeCompanyName(raw: string): string {
     .trim();
 }
 
-export function headcountToFilterBuckets(
-  min: number,
-  max: number
-): string[] {
-  const buckets = [
-    { label: "1-10", lo: 1, hi: 10 },
-    { label: "11-50", lo: 11, hi: 50 },
-    { label: "51-200", lo: 51, hi: 200 },
-    { label: "201-500", lo: 201, hi: 500 },
-    { label: "501-1000", lo: 501, hi: 1000 },
-    { label: "1001-5000", lo: 1001, hi: 5000 },
-    { label: "5001-10000", lo: 5001, hi: 10000 },
-    { label: "10001+", lo: 10001, hi: Infinity },
-  ];
-
-  return buckets
-    .filter((b) => b.hi >= min && b.lo <= max)
-    .map((b) => b.label);
-}

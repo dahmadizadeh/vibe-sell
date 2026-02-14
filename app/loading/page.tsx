@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { LoadingSteps } from "@/components/LoadingSteps";
 import { CodeGeneration } from "@/components/CodeGeneration";
 import { useAppStore } from "@/lib/store";
-import { detectBuilderScenario, getBuilderMockData, getSellerMockData } from "@/lib/mock-data";
+import { getSellerMockData } from "@/lib/mock-data";
 import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup, PostTemplate } from "@/lib/types";
 
 // ─── Cache Helpers ───────────────────────────────────────────────────────────
@@ -142,11 +142,8 @@ function LoadingContent() {
 
   const runBuilderFlow = useCallback(
     async (pid: string, description: string) => {
-      const scenario = detectBuilderScenario(description);
-      const mockData = getBuilderMockData(scenario);
-
-      let targeting: Targeting = mockData.targeting;
-      let productPage: ProductPage = mockData.productPage;
+      let targeting: Targeting | undefined;
+      let productPage: ProductPage | undefined;
       let viabilityAnalysis: ViabilityAnalysis | undefined;
       let audienceGroups: AudienceGroup[] | undefined;
       let posts: PostTemplate[] | undefined;
@@ -162,31 +159,37 @@ function LoadingContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ description }),
         });
-        const result = await res.json();
 
-        if (result.productPage?.reactCode) {
-          productPage = result.productPage;
-          targeting = result.targeting || targeting;
-
-          setAppName(productPage.name);
-          setAppTagline(productPage.tagline);
-          setGenStatus("app_ready");
-          setStatusMessage(`${productPage.name} built!`);
-          addStepDetail(`Generated "${productPage.name}" \u2014 ${productPage.tagline}`);
-
-          animateCode(productPage.reactCode!);
-          setReactCode(productPage.reactCode);
-
-          await new Promise((r) => setTimeout(r, 2000));
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          console.error("[loading] analyze-idea API error:", errorData._error || res.statusText);
+          addStepDetail("App generation encountered an issue \u2014 continuing with analysis...");
         } else {
-          if (result.targeting) targeting = result.targeting;
-          if (result.productPage) {
+          const result = await res.json();
+
+          if (result.productPage?.reactCode) {
             productPage = result.productPage;
-            setAppName(productPage.name);
+            targeting = result.targeting || targeting;
+
+            setAppName(productPage!.name);
+            setAppTagline(productPage!.tagline);
+            setGenStatus("app_ready");
+            setStatusMessage(`${productPage!.name} built!`);
+            addStepDetail(`Generated "${productPage!.name}" \u2014 ${productPage!.tagline}`);
+
+            animateCode(productPage!.reactCode!);
+            setReactCode(productPage!.reactCode);
+
+            await new Promise((r) => setTimeout(r, 2000));
+          } else if (result.productPage) {
+            productPage = result.productPage;
+            targeting = result.targeting || targeting;
+            setAppName(productPage!.name);
           }
         }
       } catch (err) {
-        console.error("analyze-idea fetch failed:", err);
+        console.error("[loading] analyze-idea fetch failed:", err);
+        addStepDetail("App generation failed \u2014 check API key configuration");
       }
 
       // ── Step 2: Analyze viability + smart targeting (parallel) ─────
@@ -199,7 +202,7 @@ function LoadingContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             description,
-            appName: productPage.name,
+            appName: productPage?.name || "My App",
           }),
         });
         const result = await res.json();
@@ -244,7 +247,7 @@ function LoadingContent() {
 
           const groupTargeting: Targeting = {
             industries: group.searchFilters.industries,
-            companySize: targeting.companySize,
+            companySize: targeting?.companySize || { min: 50, max: 5000 },
             titles: group.searchFilters.titles,
             regions: group.searchFilters.regions,
             summary: group.description,
@@ -287,8 +290,8 @@ function LoadingContent() {
         }
       }
 
-      // Fallback
-      if (allContacts.length === 0) {
+      // Fallback: try flat targeting search if no audience groups found contacts
+      if (allContacts.length === 0 && targeting) {
         const cacheKey = `crustdata_contacts_builder_${hashString(JSON.stringify(targeting))}`;
         let contacts: Contact[] | null = getCachedContacts(cacheKey);
 
@@ -310,20 +313,17 @@ function LoadingContent() {
           dataSource = "live";
         }
 
-        if (!contacts || contacts.length === 0) {
-          allContacts = mockData.contacts;
-          dataSource = "mock";
-        } else {
+        if (contacts && contacts.length > 0) {
           allContacts = contacts;
         }
-        addStepDetail(`Found ${allContacts.length} people to reach`);
+        addStepDetail(allContacts.length > 0 ? `Found ${allContacts.length} people to reach` : "No contacts found \u2014 try adjusting your idea description");
       }
 
       // ── Step 4: Create go-to-market content ────────────────────────
       setGenStatus("creating_content");
       setStatusMessage("Creating your go-to-market plan...");
 
-      let emailDrafts: EmailDraft[] = mockData.emailDrafts;
+      let emailDrafts: EmailDraft[] = [];
 
       try {
         const res = await fetch("/api/generate-content", {
@@ -331,8 +331,8 @@ function LoadingContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             description,
-            appName: productPage.name,
-            shareUrl: productPage.shareUrl,
+            appName: productPage?.name || "My App",
+            shareUrl: productPage?.shareUrl || "",
             audienceGroups: audienceGroups || [],
             viabilityAnalysis,
             contacts: allContacts,
@@ -360,23 +360,25 @@ function LoadingContent() {
       setGenStatus("complete");
       setStatusMessage("Your app is ready!");
 
-      updateProject(pid, {
-        targeting,
+      const projectUpdate: Record<string, unknown> = {
         contacts: allContacts,
         emailDrafts,
-        productPage,
         dataSource,
-        viabilityAnalysis,
-        audienceGroups,
-        posts,
-        suggestedQuestions,
         stats: {
           contactsFound: allContacts.length,
           emailsSent: 0,
           replies: 0,
           meetingsBooked: 0,
         },
-      });
+      };
+      if (targeting) projectUpdate.targeting = targeting;
+      if (productPage) projectUpdate.productPage = productPage;
+      if (viabilityAnalysis) projectUpdate.viabilityAnalysis = viabilityAnalysis;
+      if (audienceGroups) projectUpdate.audienceGroups = audienceGroups;
+      if (posts) projectUpdate.posts = posts;
+      if (suggestedQuestions) projectUpdate.suggestedQuestions = suggestedQuestions;
+
+      updateProject(pid, projectUpdate as Partial<import("@/lib/types").Project>);
 
       await new Promise((r) => setTimeout(r, 1500));
       router.push(`/project/${pid}`);

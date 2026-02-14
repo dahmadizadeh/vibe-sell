@@ -35,6 +35,7 @@ export default function ProjectPage() {
   const [composerContactId, setComposerContactId] = useState<string | null>(null);
   const [activeAudienceGroup, setActiveAudienceGroup] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"app" | "people" | "conversations" | "content">("app");
+  const [peopleSubTab, setPeopleSubTab] = useState<"customers" | "investors" | "teammates">("customers");
 
   useEffect(() => {
     hydrate();
@@ -283,10 +284,33 @@ export default function ProjectPage() {
 
             {project.productPage && !project.productPage.reactCode && (
               <Card className="p-6 mb-6">
-                <ProductPagePreview
-                  page={project.productPage}
-                  onUpdate={handleProductPageUpdate}
-                />
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    App preview unavailable
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-4 max-w-md mx-auto">
+                    The live app couldn&apos;t be generated. You can still view your product details and reach out to potential customers.
+                  </p>
+                  <ProductPagePreview
+                    page={project.productPage}
+                    onUpdate={handleProductPageUpdate}
+                  />
+                </div>
+              </Card>
+            )}
+
+            {!project.productPage && (
+              <Card className="p-6 mb-6">
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-4">&#x1F6E0;&#xFE0F;</div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    No app generated yet
+                  </h3>
+                  <p className="text-sm text-gray-500 max-w-md mx-auto">
+                    App generation may have failed. Try creating a new project with a different description.
+                  </p>
+                </div>
               </Card>
             )}
 
@@ -312,68 +336,137 @@ export default function ProjectPage() {
 
         {/* Tab 2: People to Reach */}
         {activeTab === "people" && (
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">
-              Who to Reach Out To
-            </h2>
-            <p className="text-sm text-gray-500 mb-3">
-              {project.contacts.length} people across {uniqueCompanies(project.contacts)} companies
-            </p>
-
-            {/* Data source indicator */}
-            {project.dataSource === "mock" && (
-              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-2 rounded-lg text-sm mb-4">
-                Showing sample contacts &mdash; Crustdata API connection issue
-              </div>
-            )}
-            {project.dataSource === "live" && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-3 py-2 rounded-lg text-sm mb-4">
-                Live data from 700M+ professional profiles
-              </div>
-            )}
-
-            {/* Audience group tabs */}
-            {project.audienceGroups && project.audienceGroups.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-4">
+          <div>
+            {/* Sub-tab navigation */}
+            <div className="flex gap-1 mb-4">
+              {[
+                { key: "customers" as const, label: "Users & Customers", icon: "\u{1F465}" },
+                { key: "investors" as const, label: "Investors", icon: "\u{1F4B0}" },
+                { key: "teammates" as const, label: "Teammates", icon: "\u{1F91D}" },
+              ].map((sub) => (
                 <button
-                  onClick={() => setActiveAudienceGroup(null)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                    !activeAudienceGroup
+                  key={sub.key}
+                  onClick={() => setPeopleSubTab(sub.key)}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    peopleSubTab === sub.key
                       ? "bg-brand-primary text-white"
                       : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                   }`}
                 >
-                  All ({project.contacts.length})
+                  <span className="mr-1.5">{sub.icon}</span>
+                  {sub.label}
                 </button>
-                {project.audienceGroups.map((group) => (
-                  <button
-                    key={group.id}
-                    onClick={() => setActiveAudienceGroup(group.id)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
-                      activeAudienceGroup === group.id
-                        ? "bg-brand-primary text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {group.name} ({group.contacts?.length || 0})
-                  </button>
-                ))}
-              </div>
+              ))}
+            </div>
+
+            {/* Sub-tab: Users & Customers */}
+            {peopleSubTab === "customers" && (
+              <Card className="p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                  Who to Reach Out To
+                </h2>
+                <p className="text-sm text-gray-500 mb-3">
+                  {project.contacts.length} people across {uniqueCompanies(project.contacts)} companies
+                </p>
+
+                {/* Data source indicator */}
+                {project.dataSource === "mock" && (
+                  <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-3 py-2 rounded-lg text-sm mb-4">
+                    Showing sample contacts &mdash; Crustdata API connection issue
+                  </div>
+                )}
+                {project.dataSource === "live" && (
+                  <div className="bg-green-50 border border-green-200 text-green-800 px-3 py-2 rounded-lg text-sm mb-4">
+                    Live data from 700M+ professional profiles
+                  </div>
+                )}
+
+                {/* Audience group tabs */}
+                {project.audienceGroups && project.audienceGroups.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <button
+                      onClick={() => setActiveAudienceGroup(null)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                        !activeAudienceGroup
+                          ? "bg-brand-primary text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      All ({project.contacts.length})
+                    </button>
+                    {project.audienceGroups.map((group) => (
+                      <button
+                        key={group.id}
+                        onClick={() => setActiveAudienceGroup(group.id)}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                          activeAudienceGroup === group.id
+                            ? "bg-brand-primary text-white"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {group.name} ({group.contacts?.length || 0})
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Active group description */}
+                {activeGroupData && (
+                  <p className="text-xs text-gray-500 mb-3 italic">
+                    {activeGroupData.description}
+                  </p>
+                )}
+
+                <ContactList
+                  contacts={activeAudienceGroup === null ? project.contacts : activeContacts}
+                  onWriteEmail={handleWriteEmail}
+                  emailDrafts={project.emailDrafts}
+                />
+              </Card>
             )}
 
-            {/* Active group description */}
-            {activeGroupData && (
-              <p className="text-xs text-gray-500 mb-3 italic">
-                {activeGroupData.description}
-              </p>
+            {/* Sub-tab: Investors */}
+            {peopleSubTab === "investors" && (
+              <Card className="p-8">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">{"\u{1F4C8}"}</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    Find Investors for Your Idea
+                  </h3>
+                  <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                    Discover VCs, angels, and fund partners who invest in your space.
+                    We&apos;ll match you with investors based on their portfolio, stage preference, and thesis.
+                  </p>
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm font-medium">
+                    <span>{"\u{1F680}"}</span> Coming Soon
+                  </div>
+                </div>
+              </Card>
             )}
 
-            <ContactList
-              contacts={activeAudienceGroup === null ? project.contacts : activeContacts}
-              onWriteEmail={handleWriteEmail}
-              emailDrafts={project.emailDrafts}
-            />
-          </Card>
+            {/* Sub-tab: Teammates */}
+            {peopleSubTab === "teammates" && (
+              <Card className="p-8">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">{"\u{1F9D1}\u{200D}\u{1F4BB}"}</span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    Find Co-Founders &amp; Early Hires
+                  </h3>
+                  <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                    Find engineers, designers, and operators who match the skills your startup needs.
+                    We&apos;ll identify talent with relevant experience and startup appetite.
+                  </p>
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium">
+                    <span>{"\u{1F680}"}</span> Coming Soon
+                  </div>
+                </div>
+              </Card>
+            )}
+          </div>
         )}
 
         {/* Tab 3: Conversations */}

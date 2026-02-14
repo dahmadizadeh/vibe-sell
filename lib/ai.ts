@@ -64,9 +64,14 @@ For the specific idea "${description}", build something that:
 - Is immediately impressive when someone sees it
 - Includes proper mobile-app-like styling (max-width 420px, centered, rounded cards, etc)
 
+CRITICAL: The "name" field MUST be a creative, relevant name derived directly from the user's idea description above. Do NOT use generic names like "My App" or "App". The name should reflect what the app actually does. For example:
+- "churn detection dashboard" → "ChurnGuard" or "RetentionIQ"
+- "hiring velocity tracker" → "HireVelocity" or "TalentPulse"
+- "invoice management tool" → "InvoiceFlow" or "BillStream"
+
 Return ONLY valid JSON with this exact structure (no markdown fences, no explanation):
 {
-  "name": "App Name",
+  "name": "CreativeNameMatchingTheIdea",
   "tagline": "One line tagline",
   "features": ["Feature 1", "Feature 2", "Feature 3"],
   "reactCode": "<the complete function App() { ... } code>"
