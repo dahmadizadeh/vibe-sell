@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card } from "@/components/Card";
-import type { AppEditMessage } from "@/lib/v0";
 
 interface AppBuilderProps {
   projectId: string;
@@ -18,18 +17,15 @@ interface AppBuilderProps {
 }
 
 const QUICK_CHIPS = [
-  "Add dark mode",
-  "Add sidebar navigation",
-  "Add search functionality",
-  "Improve mobile layout",
-  "Add data charts",
-  "Add settings page",
+  "Add dark mode toggle",
+  "Add search/filter functionality",
+  "Improve the design and colors",
+  "Add more sample data",
+  "Make it mobile responsive",
+  "Add animations and transitions",
+  "Add a sidebar navigation",
+  "Add loading states",
 ];
-
-function extractCode(text: string): string {
-  const match = text.match(/```(?:tsx|jsx|javascript|js)?\s*\n([\s\S]*?)```/);
-  return match ? match[1].trim() : text.trim();
-}
 
 function cleanCode(raw: string): string {
   let code = raw;
@@ -42,288 +38,49 @@ function cleanCode(raw: string): string {
   return code.trim();
 }
 
-function buildPreviewHtml(code: string): string {
+function buildIframeHtml(code: string): string {
   const cleaned = cleanCode(code);
-  const escapedCode = cleaned
-    .replace(/\\/g, "\\\\")
-    .replace(/`/g, "\\`")
-    .replace(/\$/g, "\\$");
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.tailwindcss.com"><\/script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fff; }
-    #root { min-height: 100vh; }
-    #error-display {
-      padding: 20px; margin: 20px; color: #dc2626; background: #fef2f2;
-      border: 1px solid #fecaca; border-radius: 8px; font-family: monospace;
-      font-size: 12px; white-space: pre-wrap; word-break: break-word;
-    }
-    #loading {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 100vh; color: #6b7280; font-size: 14px;
-    }
-  </style>
-</head>
-<body>
-  <div id="root"><div id="loading">Loading app preview...</div></div>
-
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin><\/script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin><\/script>
-  <script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js" crossorigin><\/script>
-
-  <script>
-    function Button(props) {
-      var variant = props.variant || 'default';
-      var size = props.size || 'default';
-      var baseClass = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none disabled:opacity-50';
-      var variantClass = variant === 'outline'
-        ? 'border border-gray-300 bg-white hover:bg-gray-50 text-gray-700'
-        : variant === 'ghost'
-        ? 'hover:bg-gray-100 text-gray-700'
-        : 'bg-indigo-600 text-white hover:bg-indigo-700';
-      var sizeClass = size === 'sm' ? 'px-3 py-1.5 text-sm' : size === 'lg' ? 'px-6 py-3 text-lg' : 'px-4 py-2 text-sm';
-      return React.createElement('button', Object.assign({}, props, {
-        className: (baseClass + ' ' + variantClass + ' ' + sizeClass + ' ' + (props.className || '')).trim()
-      }), props.children);
-    }
-
-    function Input(props) {
-      return React.createElement('input', Object.assign({
-        className: 'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:opacity-50 ' + (props.className || '')
-      }, props));
-    }
-
-    function CardComponent(props) {
-      return React.createElement('div', {
-        className: 'rounded-lg border border-gray-200 bg-white shadow-sm ' + (props.className || '')
-      }, props.children);
-    }
-    function CardHeader(props) {
-      return React.createElement('div', { className: 'flex flex-col space-y-1.5 p-6 ' + (props.className || '') }, props.children);
-    }
-    function CardTitle(props) {
-      return React.createElement('h3', { className: 'text-2xl font-semibold leading-none tracking-tight ' + (props.className || '') }, props.children);
-    }
-    function CardDescription(props) {
-      return React.createElement('p', { className: 'text-sm text-gray-500 ' + (props.className || '') }, props.children);
-    }
-    function CardContent(props) {
-      return React.createElement('div', { className: 'p-6 pt-0 ' + (props.className || '') }, props.children);
-    }
-    function Badge(props) {
-      var variant = props.variant || 'default';
-      var cls = variant === 'secondary' ? 'bg-gray-100 text-gray-800' : variant === 'outline' ? 'border border-gray-200 text-gray-700' : 'bg-indigo-100 text-indigo-800';
-      return React.createElement('span', {
-        className: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ' + cls + ' ' + (props.className || '')
-      }, props.children);
-    }
-    function Tabs(props) { return React.createElement('div', { className: props.className || '' }, props.children); }
-    function TabsList(props) { return React.createElement('div', { className: 'inline-flex h-10 items-center justify-center rounded-md bg-gray-100 p-1 ' + (props.className || '') }, props.children); }
-    function TabsTrigger(props) { return React.createElement('button', Object.assign({}, props, { className: 'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all data-[state=active]:bg-white data-[state=active]:shadow-sm ' + (props.className || '') }), props.children); }
-    function TabsContent(props) { return React.createElement('div', { className: props.className || '' }, props.children); }
-    function Textarea(props) { return React.createElement('textarea', Object.assign({ className: 'flex min-h-[80px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 ' + (props.className || '') }, props)); }
-    function Select(props) { return React.createElement('select', Object.assign({ className: 'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ' + (props.className || '') }, props), props.children); }
-    function Label(props) { return React.createElement('label', Object.assign({ className: 'text-sm font-medium leading-none ' + (props.className || '') }, props), props.children); }
-    function Separator(props) { return React.createElement('div', { className: 'shrink-0 bg-gray-200 h-[1px] w-full ' + (props.className || '') }); }
-    function Avatar(props) { return React.createElement('div', { className: 'relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full bg-gray-200 items-center justify-center ' + (props.className || '') }, props.children); }
-    function AvatarFallback(props) { return React.createElement('span', { className: 'text-sm font-medium text-gray-600 ' + (props.className || '') }, props.children); }
-    function ScrollArea(props) { return React.createElement('div', { className: 'overflow-auto ' + (props.className || ''), style: props.style }, props.children); }
-    function Switch(props) {
-      var checked = props.checked || false;
-      return React.createElement('button', {
-        role: 'switch',
-        'aria-checked': checked,
-        onClick: props.onCheckedChange ? function() { props.onCheckedChange(!checked); } : undefined,
-        className: 'peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors ' + (checked ? 'bg-indigo-600' : 'bg-gray-200') + ' ' + (props.className || '')
-      }, React.createElement('span', { className: 'pointer-events-none block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform ' + (checked ? 'translate-x-5' : 'translate-x-0') }));
-    }
-    function Dialog(props) { return props.open ? React.createElement('div', { className: 'fixed inset-0 z-50 flex items-center justify-center' }, React.createElement('div', { className: 'fixed inset-0 bg-black/50', onClick: props.onOpenChange ? function() { props.onOpenChange(false); } : undefined }), React.createElement('div', { className: 'relative z-50 bg-white rounded-lg shadow-lg max-w-lg w-full mx-4 max-h-[85vh] overflow-auto p-6' }, props.children)) : null; }
-    function DialogContent(props) { return React.createElement('div', { className: props.className || '' }, props.children); }
-    function DialogHeader(props) { return React.createElement('div', { className: 'mb-4 ' + (props.className || '') }, props.children); }
-    function DialogTitle(props) { return React.createElement('h2', { className: 'text-lg font-semibold ' + (props.className || '') }, props.children); }
-    function Progress(props) {
-      var value = props.value || 0;
-      return React.createElement('div', { className: 'relative h-4 w-full overflow-hidden rounded-full bg-gray-200 ' + (props.className || '') },
-        React.createElement('div', { className: 'h-full bg-indigo-600 transition-all', style: { width: value + '%' } }));
-    }
-    function Slider(props) {
-      return React.createElement('input', Object.assign({ type: 'range', className: 'w-full ' + (props.className || '') }, props));
-    }
-    function Tooltip(props) { return React.createElement(React.Fragment, null, props.children); }
-    function TooltipTrigger(props) { return React.createElement('span', null, props.children); }
-    function TooltipContent(props) { return null; }
-    function TooltipProvider(props) { return React.createElement(React.Fragment, null, props.children); }
-
-    function waitForDeps() {
-      return new Promise(function(resolve) {
-        function check() {
-          if (typeof React !== 'undefined' && typeof ReactDOM !== 'undefined' && typeof Babel !== 'undefined' && typeof tailwind !== 'undefined') {
-            resolve();
-          } else {
-            setTimeout(check, 50);
-          }
-        }
-        check();
-      });
-    }
-
-    function showError(msg) {
-      document.getElementById('root').innerHTML = '<div id="error-display">' +
-        msg.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</div>';
-      window.parent.postMessage({ type: 'app-preview-error', error: msg }, '*');
-    }
-
-    async function main() {
-      await waitForDeps();
-      var rawCode = \`${escapedCode}\`;
-
-      try {
-        var transpiled = Babel.transform(rawCode, {
-          presets: ['react'],
-          filename: 'App.jsx'
-        }).code;
-
-        var moduleExports = {};
-        var wrappedCode = '(function(React, useState, useEffect, useRef, useCallback, useMemo, exports, Button, Input, Card, CardHeader, CardTitle, CardDescription, CardContent, Badge, Tabs, TabsList, TabsTrigger, TabsContent, Textarea, Select, Label, Separator, Avatar, AvatarFallback, ScrollArea, Switch, Dialog, DialogContent, DialogHeader, DialogTitle, Progress, Slider, Tooltip, TooltipTrigger, TooltipContent, TooltipProvider) {' +
-          'var {useState, useEffect, useRef, useCallback, useMemo, Fragment, createElement} = React;\\n' +
-          transpiled + '\\n' +
-          'if (typeof App !== "undefined") exports.default = App;\\n' +
-          '})';
-
-        var factory = eval(wrappedCode);
-        factory(
-          React, React.useState, React.useEffect, React.useRef, React.useCallback, React.useMemo,
-          moduleExports, Button, Input, CardComponent, CardHeader, CardTitle, CardDescription, CardContent, Badge,
-          Tabs, TabsList, TabsTrigger, TabsContent, Textarea, Select, Label, Separator,
-          Avatar, AvatarFallback, ScrollArea, Switch, Dialog, DialogContent, DialogHeader, DialogTitle,
-          Progress, Slider, Tooltip, TooltipTrigger, TooltipContent, TooltipProvider
-        );
-
-        var AppComponent = moduleExports.default;
-
-        if (!AppComponent) {
-          var funcNames = transpiled.match(/function\\s+(\\w+)\\s*\\(/g);
-          if (funcNames) {
-            for (var i = 0; i < funcNames.length; i++) {
-              var name = funcNames[i].match(/function\\s+(\\w+)/)[1];
-              try {
-                var testExports = {};
-                var testCode = '(function(React, exports, Button, Input, Card, CardHeader, CardTitle, CardDescription, CardContent, Badge) {' +
-                  'var {useState, useEffect, useRef, useCallback, useMemo} = React;\\n' +
-                  transpiled + '\\n' +
-                  'exports.default = ' + name + ';\\n' +
-                  '})';
-                eval(testCode)(React, testExports, Button, Input, CardComponent, CardHeader, CardTitle, CardDescription, CardContent, Badge);
-                if (typeof testExports.default === 'function') {
-                  AppComponent = testExports.default;
-                  break;
-                }
-              } catch(e) { /* try next */ }
-            }
-          }
-        }
-
-        if (AppComponent) {
-          var root = ReactDOM.createRoot(document.getElementById('root'));
-          root.render(React.createElement(AppComponent));
-        } else {
-          showError('Could not find a React component in the generated code.');
-        }
-      } catch(e) {
-        showError('Failed to render app: ' + e.message + '\\n\\nStack: ' + (e.stack || ''));
-      }
-    }
-
-    main();
-  <\/script>
-</body>
-</html>`;
-}
-
-function buildStandaloneHtml(code: string): string {
-  const cleaned = cleanCode(code);
-  const escapedCode = cleaned
-    .replace(/\\/g, "\\\\")
-    .replace(/`/g, "\\`")
-    .replace(/\$/g, "\\$");
-
+  // We use a script tag with type text/babel so Babel transpiles it in-browser.
+  // The code is embedded directly — no template literal escaping needed since
+  // we inject it as a text node via a separate script block.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>App</title>
-  <script src="https://cdn.tailwindcss.com"><\/script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-    #root { min-height: 100vh; }
+    #error-display { color: #dc2626; padding: 20px; font-family: monospace; white-space: pre-wrap; display: none; background: #fef2f2; border: 1px solid #fecaca; margin: 20px; border-radius: 8px; font-size: 12px; }
   </style>
 </head>
 <body>
   <div id="root"></div>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin><\/script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin><\/script>
-  <script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js" crossorigin><\/script>
-  <script>
-    function Button(props) {
-      var variant = props.variant || 'default';
-      var baseClass = 'inline-flex items-center justify-center rounded-md font-medium transition-colors';
-      var cls = variant === 'outline' ? 'border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 text-sm' : 'bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 text-sm';
-      return React.createElement('button', Object.assign({}, props, { className: (baseClass + ' ' + cls + ' ' + (props.className || '')).trim() }), props.children);
-    }
-    function Input(props) {
-      return React.createElement('input', Object.assign({ className: 'flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ' + (props.className || '') }, props));
-    }
-    function CardComponent(props) { return React.createElement('div', { className: 'rounded-lg border border-gray-200 bg-white shadow-sm ' + (props.className || '') }, props.children); }
-    function CardHeader(props) { return React.createElement('div', { className: 'flex flex-col space-y-1.5 p-6 ' + (props.className || '') }, props.children); }
-    function CardTitle(props) { return React.createElement('h3', { className: 'text-2xl font-semibold leading-none tracking-tight ' + (props.className || '') }, props.children); }
-    function CardDescription(props) { return React.createElement('p', { className: 'text-sm text-gray-500 ' + (props.className || '') }, props.children); }
-    function CardContent(props) { return React.createElement('div', { className: 'p-6 pt-0 ' + (props.className || '') }, props.children); }
-    function Badge(props) {
-      var variant = props.variant || 'default';
-      var cls = variant === 'secondary' ? 'bg-gray-100 text-gray-800' : variant === 'outline' ? 'border border-gray-200 text-gray-700' : 'bg-indigo-100 text-indigo-800';
-      return React.createElement('span', { className: 'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ' + cls + ' ' + (props.className || '') }, props.children);
-    }
+  <div id="error-display"></div>
+  <script type="text/babel" data-type="module">
+    try {
+      ${cleaned}
 
-    function waitForDeps() {
-      return new Promise(function(resolve) {
-        function check() {
-          if (typeof React !== 'undefined' && typeof ReactDOM !== 'undefined' && typeof Babel !== 'undefined') resolve();
-          else setTimeout(check, 50);
-        }
-        check();
-      });
-    }
+      const rootEl = document.getElementById('root');
+      const root = ReactDOM.createRoot(rootEl);
+      const Component = typeof App !== 'undefined' ? App : null;
 
-    async function main() {
-      await waitForDeps();
-      var rawCode = \`${escapedCode}\`;
-      try {
-        var transpiled = Babel.transform(rawCode, { presets: ['react'], filename: 'App.jsx' }).code;
-        var moduleExports = {};
-        var wrappedCode = '(function(React, exports, Button, Input, Card, CardHeader, CardTitle, CardDescription, CardContent, Badge) {' +
-          'var {useState, useEffect, useRef, useCallback, useMemo} = React;\\n' +
-          transpiled + '\\n' +
-          'if (typeof App !== "undefined") exports.default = App;\\n' +
-          '})';
-        eval(wrappedCode)(React, moduleExports, Button, Input, CardComponent, CardHeader, CardTitle, CardDescription, CardContent, Badge);
-        var AppComponent = moduleExports.default;
-        if (AppComponent) {
-          ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AppComponent));
-        }
-      } catch(e) {
-        document.getElementById('root').innerHTML = '<div style="padding:20px;color:red">Error: ' + e.message + '</div>';
+      if (Component) {
+        root.render(React.createElement(Component));
+      } else {
+        document.getElementById('error-display').style.display = 'block';
+        document.getElementById('error-display').textContent = 'No App component found in generated code.';
       }
+    } catch (err) {
+      document.getElementById('error-display').style.display = 'block';
+      document.getElementById('error-display').textContent = 'Render error: ' + err.message + '\\n\\n' + err.stack;
+      window.parent.postMessage({ type: 'app-preview-error', error: err.message }, '*');
     }
-    main();
-  <\/script>
+  </script>
 </body>
 </html>`;
 }
@@ -341,14 +98,13 @@ export function AppBuilder({
 }: AppBuilderProps) {
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
   const [generating, setGenerating] = useState(false);
-  const [streamingCode, setStreamingCode] = useState("");
-  const [editInput, setEditInput] = useState("");
   const [editing, setEditing] = useState(false);
-  const [conversationHistory, setConversationHistory] = useState<AppEditMessage[]>([]);
+  const [editInput, setEditInput] = useState("");
   const [undoStack, setUndoStack] = useState<string[]>(appEditHistory || []);
   const [renderError, setRenderError] = useState<string | null>(null);
-  const [iframeKey, setIframeKey] = useState(0);
-  const editInputRef = useRef<HTMLInputElement>(null);
+  const [iframeUrl, setIframeUrl] = useState<string>("");
+  const [genError, setGenError] = useState<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Listen for iframe error messages
   useEffect(() => {
@@ -361,123 +117,93 @@ export function AppBuilder({
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
-  // Clear render error when code changes
+  // Build blob URL whenever appCode changes — this is the key fix.
+  // blob URLs are isolated from the parent origin, so the iframe can never
+  // accidentally load the platform.
   useEffect(() => {
+    if (!appCode) {
+      setIframeUrl("");
+      return;
+    }
     setRenderError(null);
+    const html = buildIframeHtml(appCode);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    setIframeUrl(url);
+    return () => URL.revokeObjectURL(url);
   }, [appCode]);
 
-  const previewHtml = useMemo(() => {
-    if (!appCode) return "";
-    return buildPreviewHtml(appCode);
-  }, [appCode]);
+  const buildPrompt = useCallback(() => {
+    const parts: string[] = [`Build this app: ${description}`];
+    if (features && features.length > 0)
+      parts.push(`Key features to include: ${features.join(", ")}`);
+    if (targetUser) parts.push(`Target users are: ${targetUser}`);
+    if (industry) parts.push(`Industry: ${industry}`);
+    if (projectGoal) parts.push(`Project goal: ${projectGoal}`);
+    parts.push(
+      "This should be a FUNCTIONAL application with real interactions, not a marketing/landing page.",
+      "Include realistic sample/mock data.",
+      "Make all buttons and interactions work."
+    );
+    return parts.join("\n");
+  }, [description, features, targetUser, industry, projectGoal]);
 
-  const handleGenerate = useCallback(async () => {
-    if (appCode) {
-      // Push current to undo before regenerating
-      setUndoStack((prev) => [...prev.slice(-19), appCode]);
-    }
-    setGenerating(true);
-    setStreamingCode("");
-    setRenderError(null);
-
-    try {
-      const res = await fetch("/api/stream-app-v0", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description,
-          context: { description, appName, features, targetUser, industry, projectGoal },
-        }),
-      });
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response body");
-
-      const decoder = new TextDecoder();
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        accumulated += chunk;
-        setStreamingCode(accumulated);
+  const generateApp = useCallback(
+    async (prompt?: string) => {
+      if (appCode) {
+        setUndoStack((prev) => [...prev.slice(-19), appCode]);
       }
-
-      if (accumulated.includes("__STREAM_ERROR__:")) {
-        const errMsg = accumulated.split("__STREAM_ERROR__:")[1];
-        throw new Error(errMsg || "Stream error");
+      setGenerating(true);
+      setGenError(null);
+      setRenderError(null);
+      try {
+        const res = await fetch("/api/v0/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: prompt || buildPrompt() }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        onUpdate({ appCode: data.code, appEditHistory: undoStack });
+      } catch (err) {
+        console.error("App generation failed:", err);
+        setGenError(err instanceof Error ? err.message : "Generation failed");
+      } finally {
+        setGenerating(false);
       }
+    },
+    [appCode, buildPrompt, onUpdate, undoStack]
+  );
 
-      const finalCode = extractCode(accumulated);
-      onUpdate({ appCode: finalCode, appEditHistory: undoStack });
-      setStreamingCode("");
-      setConversationHistory([]);
-      setIframeKey((k) => k + 1);
-    } catch (err) {
-      console.error("App generation failed:", err);
-    } finally {
-      setGenerating(false);
-    }
-  }, [appCode, description, appName, features, targetUser, industry, projectGoal, onUpdate, undoStack]);
-
-  const handleEdit = useCallback(async (instruction: string) => {
-    if (!appCode || !instruction.trim()) return;
-
-    setEditing(true);
-    setStreamingCode("");
-    setRenderError(null);
-
-    // Push current to undo
-    const newUndoStack = [...undoStack.slice(-19), appCode];
-    setUndoStack(newUndoStack);
-
-    try {
-      const res = await fetch("/api/edit-app", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentCode: appCode,
-          instruction,
-          history: conversationHistory,
-        }),
-      });
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response body");
-
-      const decoder = new TextDecoder();
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        accumulated += chunk;
-        setStreamingCode(accumulated);
+  const editApp = useCallback(
+    async (instruction: string) => {
+      if (!appCode || !instruction.trim()) return;
+      setEditing(true);
+      setGenError(null);
+      setRenderError(null);
+      const newUndoStack = [...undoStack.slice(-19), appCode];
+      setUndoStack(newUndoStack);
+      try {
+        const res = await fetch("/api/v0/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: instruction, existingCode: appCode }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        onUpdate({ appCode: data.code, appEditHistory: newUndoStack });
+        setEditInput("");
+      } catch (err) {
+        console.error("App edit failed:", err);
+        setGenError(err instanceof Error ? err.message : "Edit failed");
+        // Revert undo stack on failure
+        setUndoStack((prev) => prev.slice(0, -1));
+      } finally {
+        setEditing(false);
       }
-
-      if (accumulated.includes("__STREAM_ERROR__:")) {
-        const errMsg = accumulated.split("__STREAM_ERROR__:")[1];
-        throw new Error(errMsg || "Stream error");
-      }
-
-      const finalCode = extractCode(accumulated);
-      onUpdate({ appCode: finalCode, appEditHistory: newUndoStack });
-      setStreamingCode("");
-      setConversationHistory((prev) => [
-        ...prev,
-        { role: "user", content: instruction },
-        { role: "assistant", content: finalCode },
-      ]);
-      setEditInput("");
-      setIframeKey((k) => k + 1);
-    } catch (err) {
-      console.error("App edit failed:", err);
-    } finally {
-      setEditing(false);
-    }
-  }, [appCode, conversationHistory, onUpdate, undoStack]);
+    },
+    [appCode, onUpdate, undoStack]
+  );
 
   const handleUndo = useCallback(() => {
     if (undoStack.length === 0) return;
@@ -485,25 +211,21 @@ export function AppBuilder({
     const previousCode = newStack.pop()!;
     setUndoStack(newStack);
     onUpdate({ appCode: previousCode, appEditHistory: newStack });
-    setConversationHistory((prev) => prev.slice(0, -2));
-    setIframeKey((k) => k + 1);
   }, [undoStack, onUpdate]);
 
   const handleOpenNewTab = useCallback(() => {
-    if (!appCode) return;
-    const html = buildStandaloneHtml(appCode);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-  }, [appCode]);
+    if (iframeUrl) {
+      window.open(iframeUrl, "_blank");
+    }
+  }, [iframeUrl]);
 
   const handleAutoFix = useCallback(() => {
     if (!renderError) return;
-    handleEdit(`Fix this error: ${renderError}`);
+    editApp(`Fix this error: ${renderError}`);
     setRenderError(null);
-  }, [renderError, handleEdit]);
+  }, [renderError, editApp]);
 
-  // Empty state — no app code yet
+  // Empty state — no appCode yet
   if (!appCode && !generating) {
     return (
       <Card className="p-0 mb-6 overflow-hidden">
@@ -513,10 +235,16 @@ export function AppBuilder({
             Build Your App
           </h3>
           <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
-            Generate a fully functional, interactive app with AI. Includes working UI, navigation, sample data, and real interactions.
+            Generate a fully functional, interactive app with v0. Includes
+            working UI, navigation, sample data, and real interactions.
           </p>
+          {genError && (
+            <div className="bg-red-50 border border-red-200 text-red-800 px-3 py-2 rounded-lg text-sm mb-4 max-w-md mx-auto">
+              {genError}
+            </div>
+          )}
           <button
-            onClick={handleGenerate}
+            onClick={() => generateApp()}
             className="px-6 py-3 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors shadow-sm"
           >
             Build Your App
@@ -526,18 +254,18 @@ export function AppBuilder({
     );
   }
 
-  // Generating state — show streaming code
+  // Generating state
   if (generating) {
     return (
       <Card className="p-0 mb-6 overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-          <span className="w-4 h-4 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm font-medium text-gray-700">Building your app...</span>
-        </div>
-        <div className="bg-gray-950 p-4 overflow-auto" style={{ height: "500px" }}>
-          <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all">
-            {streamingCode || "Waiting for v0 response..."}
-          </pre>
+        <div className="flex flex-col items-center justify-center py-20 px-6">
+          <div className="animate-spin w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full mb-4" />
+          <p className="text-gray-700 font-medium">
+            Building your app with v0...
+          </p>
+          <p className="text-gray-400 text-sm mt-1">
+            This takes 15-30 seconds
+          </p>
         </div>
       </Card>
     );
@@ -545,8 +273,8 @@ export function AppBuilder({
 
   return (
     <Card className="p-0 mb-6 overflow-hidden">
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+      {/* Header / toolbar */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <span className="font-semibold text-gray-900">{appName}</span>
           <div className="flex bg-gray-100 rounded-lg p-0.5">
@@ -579,15 +307,16 @@ export function AppBuilder({
           >
             Open in New Tab
           </button>
+          {undoStack.length > 0 && (
+            <button
+              onClick={handleUndo}
+              className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Undo
+            </button>
+          )}
           <button
-            onClick={handleUndo}
-            disabled={undoStack.length === 0}
-            className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            Undo
-          </button>
-          <button
-            onClick={handleGenerate}
+            onClick={() => generateApp()}
             className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
           >
             Regenerate
@@ -603,90 +332,96 @@ export function AppBuilder({
           </span>
           <button
             onClick={handleAutoFix}
-            className="px-3 py-1 text-xs font-medium text-amber-700 border border-amber-300 rounded-md hover:bg-amber-100 transition-colors whitespace-nowrap"
+            disabled={editing}
+            className="px-3 py-1 text-xs font-medium text-amber-700 border border-amber-300 rounded-md hover:bg-amber-100 transition-colors whitespace-nowrap disabled:opacity-50"
           >
             Fix Automatically
           </button>
         </div>
       )}
 
+      {/* Gen/edit error */}
+      {genError && (
+        <div className="px-4 py-2 bg-red-50 border-b border-red-200 text-red-700 text-xs">
+          {genError}
+        </div>
+      )}
+
       {/* Preview or Code view */}
       {viewMode === "preview" ? (
-        <iframe
-          key={iframeKey}
-          srcDoc={previewHtml}
-          style={{ width: "100%", height: "500px", border: "none", background: "#fff" }}
-          sandbox="allow-scripts allow-same-origin"
-          title="App Preview"
-        />
+        iframeUrl ? (
+          <iframe
+            ref={iframeRef}
+            src={iframeUrl}
+            className="w-full border-0 bg-white"
+            style={{ height: "600px" }}
+            sandbox="allow-scripts"
+            title="App Preview"
+          />
+        ) : (
+          <div
+            className="w-full flex items-center justify-center text-gray-400 text-sm"
+            style={{ height: "600px" }}
+          >
+            No preview available
+          </div>
+        )
       ) : (
-        <div className="bg-gray-950 p-4 overflow-auto" style={{ height: "500px" }}>
-          <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-all">
-            {appCode}
+        <div
+          className="bg-gray-950 p-4 overflow-auto"
+          style={{ height: "600px" }}
+        >
+          <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all leading-relaxed">
+            <code>{appCode}</code>
           </pre>
         </div>
       )}
 
-      {/* Editing streaming indicator */}
+      {/* Editing indicator */}
       {editing && (
-        <div className="px-4 py-2 bg-blue-50 border-t border-blue-200">
-          <div className="flex items-center gap-2 text-xs text-blue-700">
-            <span className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            Applying changes...
-          </div>
-          {streamingCode && (
-            <div className="mt-2 bg-gray-950 rounded-md p-2 max-h-24 overflow-auto">
-              <pre className="text-[10px] text-green-400 font-mono whitespace-pre-wrap break-all">
-                {streamingCode.slice(-500)}
-              </pre>
-            </div>
-          )}
+        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border-t border-blue-200 text-xs text-blue-700">
+          <span className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          Applying changes with v0... (15-30 seconds)
         </div>
       )}
 
-      {/* Quick chips + edit input */}
+      {/* Edit input + quick chips */}
       <div className="px-4 py-3 border-t border-gray-100">
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {QUICK_CHIPS.map((chip) => (
-            <button
-              key={chip}
-              onClick={() => handleEdit(chip)}
-              disabled={editing}
-              className="px-2.5 py-1 text-xs text-gray-600 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors disabled:opacity-50"
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2 mb-3">
           <input
-            ref={editInputRef}
             type="text"
             value={editInput}
             onChange={(e) => setEditInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !editing && editInput.trim()) {
-                handleEdit(editInput.trim());
+                editApp(editInput.trim());
               }
             }}
-            placeholder="Describe changes to your app..."
-            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary"
+            placeholder="Edit your app... e.g., 'Add a favorites feature' or 'Change colors to dark theme'"
+            className="flex-1 border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary"
             disabled={editing}
           />
           <button
             onClick={() => {
-              if (editInput.trim()) handleEdit(editInput.trim());
+              if (editInput.trim()) editApp(editInput.trim());
             }}
             disabled={editing || !editInput.trim()}
-            className="px-4 py-2 text-sm font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
+            className="bg-brand-primary text-white px-6 py-3 rounded-lg text-sm font-medium hover:bg-brand-primary/90 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap transition-colors"
           >
-            {editing ? (
-              <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Editing...
-              </span>
-            ) : "Edit"}
+            {editing ? "Editing..." : "Edit"}
           </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {QUICK_CHIPS.map((chip) => (
+            <button
+              key={chip}
+              onClick={() => editApp(chip)}
+              disabled={editing}
+              className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-full transition-colors disabled:opacity-50"
+            >
+              {chip}
+            </button>
+          ))}
         </div>
       </div>
     </Card>
