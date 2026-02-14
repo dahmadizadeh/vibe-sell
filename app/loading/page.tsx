@@ -7,11 +7,11 @@ import { LoadingSteps } from "@/components/LoadingSteps";
 import { CodeGeneration } from "@/components/CodeGeneration";
 import { useAppStore } from "@/lib/store";
 import { detectBuilderScenario, getBuilderMockData, getSellerMockData } from "@/lib/mock-data";
-import type { Contact, PitchPage, ProductPage, Targeting } from "@/lib/types";
+import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft } from "@/lib/types";
 
 // ─── Cache Helpers ───────────────────────────────────────────────────────────
 
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 function getCachedContacts(key: string): Contact[] | null {
   if (typeof window === "undefined") return null;
@@ -44,68 +44,6 @@ function hashString(s: string): string {
   return Math.abs(hash).toString(36);
 }
 
-// ─── SSE Helper ──────────────────────────────────────────────────────────────
-
-interface SSECallbacks {
-  onCodeChunk: (text: string) => void;
-  onStatus: (step: string, message: string) => void;
-  onAppReady: (app: { name: string; tagline: string; features: string[]; reactCode: string }) => void;
-  onComplete: (data: { targeting: Targeting; productPage: ProductPage }) => void;
-  onError: () => void;
-}
-
-async function consumeAnalyzeStream(description: string, callbacks: SSECallbacks) {
-  const res = await fetch("/api/analyze-idea", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ description }),
-  });
-
-  if (!res.ok || !res.body) {
-    callbacks.onError();
-    return;
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    let currentEvent = "";
-    for (const line of lines) {
-      if (line.startsWith("event: ")) {
-        currentEvent = line.slice(7);
-      } else if (line.startsWith("data: ") && currentEvent) {
-        try {
-          const data = JSON.parse(line.slice(6));
-          switch (currentEvent) {
-            case "code_chunk":
-              callbacks.onCodeChunk(data.text);
-              break;
-            case "status":
-              callbacks.onStatus(data.step, data.message);
-              break;
-            case "app_ready":
-              callbacks.onAppReady(data);
-              break;
-            case "complete":
-              callbacks.onComplete(data);
-              break;
-          }
-        } catch {}
-        currentEvent = "";
-      }
-    }
-  }
-}
-
 // ─── Loading Content ─────────────────────────────────────────────────────────
 
 function LoadingContent() {
@@ -115,7 +53,7 @@ function LoadingContent() {
   const { getProject, updateProject, hydrate } = useAppStore();
   const startedRef = useRef(false);
 
-  // Builder streaming state
+  // Builder UI state
   const [streamedCode, setStreamedCode] = useState("");
   const [genStatus, setGenStatus] = useState<
     "generating" | "app_ready" | "targeting" | "finding_customers" | "complete"
@@ -132,55 +70,67 @@ function LoadingContent() {
   const project = getProject(projectId || "");
   const isBuilder = project?.mode === "builder";
 
+  // Animate code appearing character by character
+  const animateCode = useCallback((code: string) => {
+    let i = 0;
+    const chunkSize = 15; // characters per tick
+    const interval = setInterval(() => {
+      i += chunkSize;
+      if (i >= code.length) {
+        setStreamedCode(code);
+        clearInterval(interval);
+      } else {
+        setStreamedCode(code.slice(0, i));
+      }
+    }, 20);
+    return () => clearInterval(interval);
+  }, []);
+
   const runBuilderFlow = useCallback(
-    async (projectId: string, description: string) => {
+    async (pid: string, description: string) => {
       const scenario = detectBuilderScenario(description);
       const mockData = getBuilderMockData(scenario);
 
       let targeting: Targeting = mockData.targeting;
       let productPage: ProductPage = mockData.productPage;
-      let gotRealData = false;
 
-      // Step 1: Stream app generation from Claude
+      // Step 1: Call analyze-idea API (regular JSON, not SSE)
+      setGenStatus("generating");
+      setStatusMessage("Building your app...");
+
       try {
-        await consumeAnalyzeStream(description, {
-          onCodeChunk: (text) => {
-            setStreamedCode((prev) => prev + text);
-          },
-          onStatus: (step, message) => {
-            setStatusMessage(message);
-            if (step === "targeting") setGenStatus("targeting");
-          },
-          onAppReady: (app) => {
-            setAppName(app.name);
-            setAppTagline(app.tagline);
-            setReactCode(app.reactCode);
-            setGenStatus("app_ready");
-            setStatusMessage("App built! Finding your customers...");
-            // Save productPage immediately so it persists even if stream drops
-            productPage = {
-              name: app.name,
-              tagline: app.tagline,
-              features: app.features,
-              shareUrl: `/p/${app.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").substring(0, 40)}`,
-              reactCode: app.reactCode,
-            };
-            gotRealData = true;
-          },
-          onComplete: (data) => {
-            if (data.targeting) targeting = data.targeting;
-            // Only override productPage from complete if it has reactCode
-            // (otherwise keep the one from app_ready)
-            if (data.productPage?.reactCode) {
-              productPage = data.productPage;
-            }
-          },
-          onError: () => {
-            // Will fall through to mock data
-          },
+        const res = await fetch("/api/analyze-idea", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description }),
         });
-      } catch {
-        // Fall through to mock data
+        const result = await res.json();
+
+        if (result.productPage?.reactCode) {
+          // Real AI response
+          productPage = result.productPage;
+          targeting = result.targeting || targeting;
+
+          // Show the code being "typed"
+          setAppName(productPage.name);
+          setAppTagline(productPage.tagline);
+          setGenStatus("app_ready");
+          setStatusMessage(`${productPage.name} built! Finding your customers...`);
+
+          // Animate code appearing
+          animateCode(productPage.reactCode!);
+          setReactCode(productPage.reactCode);
+
+          // Small delay so user sees the preview
+          await new Promise((r) => setTimeout(r, 3000));
+        } else {
+          // Fallback response (mock data from server)
+          if (result.targeting) targeting = result.targeting;
+          if (result.productPage) productPage = result.productPage;
+        }
+      } catch (err) {
+        console.error("analyze-idea fetch failed:", err);
+        // Keep mock data
       }
 
       // Step 2: Find customers
@@ -224,9 +174,9 @@ function LoadingContent() {
       }).catch(() => {});
 
       setGenStatus("complete");
-      setStatusMessage(gotRealData ? "Your app is ready!" : "Done!");
+      setStatusMessage(productPage.reactCode ? "Your app is ready!" : "Done!");
 
-      updateProject(projectId, {
+      updateProject(pid, {
         targeting,
         contacts,
         emailDrafts: mockData.emailDrafts,
@@ -240,18 +190,20 @@ function LoadingContent() {
         },
       });
 
-      // Brief pause to show the complete state
+      // Brief pause to show complete state
       await new Promise((r) => setTimeout(r, 1500));
-      router.push(`/project/${projectId}`);
+      router.push(`/project/${pid}`);
     },
-    [updateProject, router]
+    [updateProject, router, animateCode]
   );
 
   const runSellerFlow = useCallback(
-    async (projectId: string, description: string, targetCompanies: string[]) => {
+    async (pid: string, description: string, targetCompanies: string[]) => {
+      const minWait = 5500;
+      const startTime = Date.now();
       const companies = targetCompanies.length > 0 ? targetCompanies : ["Stripe"];
       const allContacts: Contact[] = [];
-      const allDrafts: import("@/lib/types").EmailDraft[] = [];
+      const allDrafts: EmailDraft[] = [];
       const allPitchPages: PitchPage[] = [];
       let anyLiveData = false;
 
@@ -266,9 +218,7 @@ function LoadingContent() {
             body: JSON.stringify({ description, company }),
           });
           const pitchResult = await pitchRes.json();
-          if (pitchResult.pitchPage) {
-            pitchPage = pitchResult.pitchPage;
-          }
+          if (pitchResult.pitchPage) pitchPage = pitchResult.pitchPage;
         } catch {}
 
         const cacheKey = `crustdata_contacts_${company.toLowerCase().replace(/\s+/g, "_")}`;
@@ -292,9 +242,7 @@ function LoadingContent() {
           } catch {}
         }
 
-        if (!contacts || contacts.length === 0) {
-          contacts = mockData.contacts;
-        }
+        if (!contacts || contacts.length === 0) contacts = mockData.contacts;
 
         allPitchPages.push(pitchPage);
         allContacts.push(...contacts);
@@ -311,13 +259,11 @@ function LoadingContent() {
         }),
       }).catch(() => {});
 
-      const canonicalCompanies = allPitchPages.map((pp) => pp.targetCompany);
-
-      updateProject(projectId, {
+      updateProject(pid, {
         contacts: allContacts,
         emailDrafts: allDrafts,
         pitchPages: allPitchPages,
-        targetCompanies: canonicalCompanies,
+        targetCompanies: allPitchPages.map((pp) => pp.targetCompany),
         dataSource: anyLiveData ? "live" : "mock",
         stats: {
           contactsFound: allContacts.length,
@@ -327,9 +273,11 @@ function LoadingContent() {
         },
       });
 
-      router.push(`/project/${projectId}`);
+      const elapsed = Date.now() - startTime;
+      if (elapsed < minWait) await new Promise((r) => setTimeout(r, minWait - elapsed));
+      router.push(`/project/${pid}`);
     },
-    [updateProject, router, project]
+    [updateProject, router]
   );
 
   useEffect(() => {
@@ -342,22 +290,11 @@ function LoadingContent() {
       return;
     }
 
-    const loadData = async () => {
-      const minWait = proj.mode === "builder" ? 0 : 5500;
-      const startTime = Date.now();
-
-      if (proj.mode === "builder") {
-        await runBuilderFlow(projectId, proj.description);
-      } else {
-        await runSellerFlow(projectId, proj.description, proj.targetCompanies || []);
-        const elapsed = Date.now() - startTime;
-        if (elapsed < minWait) {
-          await new Promise((r) => setTimeout(r, minWait - elapsed));
-        }
-      }
-    };
-
-    loadData();
+    if (proj.mode === "builder") {
+      runBuilderFlow(projectId, proj.description);
+    } else {
+      runSellerFlow(projectId, proj.description, proj.targetCompanies || []);
+    }
   }, [projectId, getProject, router, hydrate, runBuilderFlow, runSellerFlow]);
 
   // Builder mode: show code generation UI
@@ -376,7 +313,7 @@ function LoadingContent() {
     );
   }
 
-  // Seller mode: keep existing loading steps
+  // Seller mode: existing loading steps
   return (
     <div className="min-h-[calc(100vh-56px)] flex items-center justify-center px-4">
       <LoadingSteps

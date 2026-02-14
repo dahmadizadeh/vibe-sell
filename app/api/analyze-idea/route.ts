@@ -1,5 +1,5 @@
-import { NextRequest } from "next/server";
-import { generateAppStream, parseAppResponse, generateTargeting, slugify } from "@/lib/ai";
+import { NextRequest, NextResponse } from "next/server";
+import { generateApp, generateTargeting, slugify } from "@/lib/ai";
 import { detectBuilderScenario, getBuilderMockData } from "@/lib/mock-data";
 
 export const maxDuration = 60;
@@ -7,71 +7,36 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
   const { description } = (await req.json()) as { description: string };
 
-  const encoder = new TextEncoder();
-  const stream = new TransformStream();
-  const writer = stream.writable.getWriter();
+  try {
+    console.log("[analyze-idea] Starting app generation for:", description.slice(0, 80));
 
-  const send = async (event: string, data: unknown) => {
-    await writer.write(
-      encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-    );
-  };
+    // Step 1: Generate the actual app
+    const app = await generateApp(description);
+    console.log("[analyze-idea] App generated:", app.name, "code length:", app.reactCode?.length);
 
-  // Run async pipeline in background
-  (async () => {
-    try {
-      await send("status", { step: "generating", message: "Building your app..." });
+    // Step 2: Generate targeting based on the real app name
+    const targeting = await generateTargeting(description, app.name);
+    console.log("[analyze-idea] Targeting generated:", targeting.summary?.slice(0, 80));
 
-      // Stream the app code generation
-      let fullText = "";
-      for await (const chunk of generateAppStream(description)) {
-        fullText += chunk;
-        await send("code_chunk", { text: chunk });
-      }
-
-      // Parse the complete response
-      const app = parseAppResponse(fullText);
-      await send("app_ready", {
+    return NextResponse.json({
+      targeting,
+      productPage: {
         name: app.name,
         tagline: app.tagline,
         features: app.features,
+        shareUrl: `/p/${slugify(app.name)}`,
         reactCode: app.reactCode,
-      });
-
-      // Now generate targeting
-      await send("status", { step: "targeting", message: "Finding your customers..." });
-      const targeting = await generateTargeting(description, app.name);
-
-      // Send final complete event
-      await send("complete", {
-        targeting,
-        productPage: {
-          name: app.name,
-          tagline: app.tagline,
-          features: app.features,
-          shareUrl: `/p/${slugify(app.name)}`,
-          reactCode: app.reactCode,
-        },
-      });
-    } catch (error) {
-      console.error("AI generation failed:", error);
-      // Fall back to mock data
-      const scenario = detectBuilderScenario(description);
-      const data = getBuilderMockData(scenario);
-      await send("complete", {
-        targeting: data.targeting,
-        productPage: data.productPage,
-      });
-    } finally {
-      await writer.close();
-    }
-  })();
-
-  return new Response(stream.readable, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+      },
+    });
+  } catch (error) {
+    console.error("[analyze-idea] AI generation failed:", error);
+    // Fall back to mock data
+    const scenario = detectBuilderScenario(description);
+    const data = getBuilderMockData(scenario);
+    return NextResponse.json({
+      targeting: data.targeting,
+      productPage: data.productPage,
+      _fallback: true,
+    });
+  }
 }
