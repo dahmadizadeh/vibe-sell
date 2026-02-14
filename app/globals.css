@@ -1,27 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
+  color: #1e293b;
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* Slide-over animations */
+@keyframes slideOverIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
 }
+@keyframes slideOverOut {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+.slide-over-enter {
+  animation: slideOverIn 250ms ease-out forwards;
+}
+
+/* Toast animation */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
+.toast-enter { animation: toastIn 200ms ease-out forwards; }
+.toast-exit { animation: toastOut 200ms ease-in forwards; }
