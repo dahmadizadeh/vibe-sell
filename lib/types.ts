@@ -27,6 +27,9 @@ export interface Project {
   source?: 'idea' | 'url' | 'description';
   externalAppUrl?: string;
   importedAnalysis?: ImportedAnalysis;
+  investors?: Contact[];
+  teammates?: Contact[];
+  linkedInPosts?: LinkedInPost[];
 }
 
 export interface Targeting {
@@ -199,4 +202,20 @@ export interface ImportedAnalysis {
   features: string[];
   industry: string;
   competitors: string[];
+}
+
+export interface LinkedInPost {
+  id: string;
+  authorName: string;
+  authorTitle: string;
+  authorCompany: string;
+  authorLinkedinUrl: string;
+  postContent: string;
+  postDate: string;
+  postUrl?: string;
+  likes?: number;
+  comments?: number;
+  whyRelevant: string;
+  commentStrategy: string;
+  suggestedComment: string;
 }

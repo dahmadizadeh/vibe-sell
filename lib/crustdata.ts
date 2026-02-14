@@ -166,6 +166,50 @@ export async function searchCompany(
   }
 }
 
+export interface CrustdataLinkedInPost {
+  author_name?: string;
+  author_title?: string;
+  author_company?: string;
+  author_linkedin_url?: string;
+  content?: string;
+  date?: string;
+  post_url?: string;
+  likes?: number;
+  comments?: number;
+}
+
+export async function searchLinkedInPosts(
+  keywords: string[],
+  limit: number = 20
+): Promise<CrustdataLinkedInPost[]> {
+  if (!API_KEY) throw new Error("CRUSTDATA_API_KEY not set");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const res = await fetch(`${BASE_URL}/screener/linkedin_posts/keyword_search/`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ keywords, limit }),
+      signal: controller.signal,
+    });
+
+    console.log("[crustdata] searchLinkedInPosts status:", res.status);
+
+    if (!res.ok) {
+      const body = await res.text();
+      console.error("[crustdata] searchLinkedInPosts error:", body.slice(0, 500));
+      throw new Error(`Crustdata LinkedIn posts search failed: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return data.posts || data.results || data || [];
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // ─── Mapping Helpers ─────────────────────────────────────────────────────────
 
 export function mapPersonToContact(

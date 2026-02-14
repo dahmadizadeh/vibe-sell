@@ -180,6 +180,14 @@ export const COPY = {
   validationRequired: "This field is required",
   validationCompanyRequired: "Please enter at least one company",
 
+  // People sub-tabs
+  investorsTab: "Investors",
+  teammatesTab: "Teammates",
+  linkedInPostsTab: "LinkedIn Posts",
+  investorsDesc: "VCs, angels, and fund partners who invest in your space",
+  teammatesDesc: "Engineers, designers, and operators for your founding team",
+  linkedInDesc: "Engage with people already talking about your space",
+
   // Toast
   toastLinkCopied: "Link copied to clipboard",
   toastEmailCopied: "Email copied to clipboard",

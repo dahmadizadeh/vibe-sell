@@ -7,7 +7,7 @@ import { LoadingSteps } from "@/components/LoadingSteps";
 import { CodeGeneration } from "@/components/CodeGeneration";
 import { useAppStore } from "@/lib/store";
 import { getSellerMockData } from "@/lib/mock-data";
-import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup, PostTemplate, ImportedAnalysis } from "@/lib/types";
+import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup, PostTemplate, ImportedAnalysis, LinkedInPost } from "@/lib/types";
 import { generateSlug } from "@/lib/utils";
 
 // ─── Cache Helpers ───────────────────────────────────────────────────────────
@@ -53,28 +53,32 @@ type BuilderStep =
   | "analyzing"
   | "targeting"
   | "finding_customers"
+  | "finding_network"
   | "creating_content"
   | "complete";
 
 function getBuilderSteps(source?: string): { key: string; label: string }[] {
   if (source === 'url') return [
-    { key: "generating", label: "Analyze Your Product" },
+    { key: "generating", label: "Analyze Product" },
     { key: "analyzing", label: "Analyze Viability" },
-    { key: "finding_customers", label: "Find Real People" },
-    { key: "creating_content", label: "Go-to-Market Plan" },
+    { key: "finding_customers", label: "Find People" },
+    { key: "finding_network", label: "LinkedIn Strategy" },
+    { key: "creating_content", label: "Go-to-Market" },
     { key: "complete", label: "Done" },
   ];
   if (source === 'description') return [
     { key: "analyzing", label: "Analyze Viability" },
-    { key: "finding_customers", label: "Find Real People" },
-    { key: "creating_content", label: "Go-to-Market Plan" },
+    { key: "finding_customers", label: "Find People" },
+    { key: "finding_network", label: "LinkedIn Strategy" },
+    { key: "creating_content", label: "Go-to-Market" },
     { key: "complete", label: "Done" },
   ];
   return [
     { key: "generating", label: "Build App" },
     { key: "analyzing", label: "Analyze Viability" },
-    { key: "finding_customers", label: "Find Real People" },
-    { key: "creating_content", label: "Go-to-Market Plan" },
+    { key: "finding_customers", label: "Find People" },
+    { key: "finding_network", label: "LinkedIn Strategy" },
+    { key: "creating_content", label: "Go-to-Market" },
     { key: "complete", label: "Done" },
   ];
 }
@@ -211,47 +215,94 @@ function LoadingContent() {
       } else if (source === 'description') {
         // Description-only: skip Step 1 entirely
       } else {
-        // Default idea flow: generate app
+        // Default idea flow: stream app generation
         setGenStatus("generating");
         setStatusMessage("Building your app...");
 
+        let streamSuccess = false;
         try {
-          const res = await fetch("/api/analyze-idea", {
+          const res = await fetch("/api/stream-app", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ description }),
           });
 
-          if (!res.ok) {
-            const errorData = await res.json().catch(() => ({}));
-            console.error("[loading] analyze-idea API error:", errorData._error || res.statusText);
-            addStepDetail("App generation encountered an issue \u2014 continuing with analysis...");
-          } else {
-            const result = await res.json();
+          if (res.ok && res.body) {
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulated = "";
 
-            if (result.productPage?.reactCode) {
-              productPage = result.productPage;
-              targeting = result.targeting || targeting;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const chunk = decoder.decode(value, { stream: true });
+              accumulated += chunk;
+              setStreamedCode(accumulated);
+            }
 
-              setAppName(productPage!.name);
-              setAppTagline(productPage!.tagline);
+            // Parse the complete response
+            try {
+              const cleaned = accumulated.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+              const parsed = JSON.parse(cleaned);
+              productPage = {
+                name: parsed.name,
+                tagline: parsed.tagline,
+                features: parsed.features,
+                shareUrl: `/p/${generateSlug(parsed.name)}`,
+                reactCode: parsed.reactCode,
+              };
+
+              setAppName(productPage.name);
+              setAppTagline(productPage.tagline);
               setGenStatus("app_ready");
-              setStatusMessage(`${productPage!.name} built!`);
-              addStepDetail(`Generated "${productPage!.name}" \u2014 ${productPage!.tagline}`);
-
-              animateCode(productPage!.reactCode!);
-              setReactCode(productPage!.reactCode);
+              setStatusMessage(`${productPage.name} built!`);
+              addStepDetail(`Generated "${productPage.name}" \u2014 ${productPage.tagline}`);
+              setReactCode(productPage.reactCode);
+              streamSuccess = true;
 
               await new Promise((r) => setTimeout(r, 2000));
-            } else if (result.productPage) {
-              productPage = result.productPage;
-              targeting = result.targeting || targeting;
-              setAppName(productPage!.name);
+            } catch (parseErr) {
+              console.error("[loading] stream-app parse failed:", parseErr);
             }
           }
         } catch (err) {
-          console.error("[loading] analyze-idea fetch failed:", err);
-          addStepDetail("App generation failed \u2014 check API key configuration");
+          console.error("[loading] stream-app fetch failed:", err);
+        }
+
+        // Fallback to non-streaming if streaming failed
+        if (!streamSuccess) {
+          try {
+            const res = await fetch("/api/analyze-idea", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ description }),
+            });
+
+            if (!res.ok) {
+              addStepDetail("App generation encountered an issue \u2014 continuing with analysis...");
+            } else {
+              const result = await res.json();
+              if (result.productPage?.reactCode) {
+                productPage = result.productPage;
+                targeting = result.targeting || targeting;
+                setAppName(productPage!.name);
+                setAppTagline(productPage!.tagline);
+                setGenStatus("app_ready");
+                setStatusMessage(`${productPage!.name} built!`);
+                addStepDetail(`Generated "${productPage!.name}" \u2014 ${productPage!.tagline}`);
+                animateCode(productPage!.reactCode!);
+                setReactCode(productPage!.reactCode);
+                await new Promise((r) => setTimeout(r, 2000));
+              } else if (result.productPage) {
+                productPage = result.productPage;
+                targeting = result.targeting || targeting;
+                setAppName(productPage!.name);
+              }
+            }
+          } catch (err) {
+            console.error("[loading] analyze-idea fetch failed:", err);
+            addStepDetail("App generation failed \u2014 check API key configuration");
+          }
         }
       }
 
@@ -382,6 +433,51 @@ function LoadingContent() {
         addStepDetail(allContacts.length > 0 ? `Found ${allContacts.length} people to reach` : "No contacts found \u2014 try adjusting your idea description");
       }
 
+      // ── Step 3b: Find investors, teammates, LinkedIn posts in parallel ──
+      setGenStatus("finding_network");
+      setStatusMessage("Finding investors, teammates, and relevant posts...");
+
+      let investors: Contact[] | undefined;
+      let teammates: Contact[] | undefined;
+      let linkedInPosts: LinkedInPost[] | undefined;
+
+      const networkBody = {
+        description: enrichedDescription,
+        appName: productPage?.name || "My App",
+        industry: targeting?.industries?.[0] || "Technology",
+      };
+
+      const [investorsResult, teammatesResult, postsResult] = await Promise.allSettled([
+        fetch("/api/find-investors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(networkBody),
+        }).then((r) => r.json()),
+        fetch("/api/find-teammates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(networkBody),
+        }).then((r) => r.json()),
+        fetch("/api/find-posts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(networkBody),
+        }).then((r) => r.json()),
+      ]);
+
+      if (investorsResult.status === "fulfilled" && investorsResult.value.contacts?.length > 0) {
+        investors = investorsResult.value.contacts as Contact[];
+        addStepDetail(`Found ${investorsResult.value.contacts.length} potential investors`);
+      }
+      if (teammatesResult.status === "fulfilled" && teammatesResult.value.contacts?.length > 0) {
+        teammates = teammatesResult.value.contacts as Contact[];
+        addStepDetail(`Found ${teammatesResult.value.contacts.length} potential teammates`);
+      }
+      if (postsResult.status === "fulfilled" && postsResult.value.posts?.length > 0) {
+        linkedInPosts = postsResult.value.posts as LinkedInPost[];
+        addStepDetail(`Found ${postsResult.value.posts.length} relevant LinkedIn posts`);
+      }
+
       // ── Step 4: Create go-to-market content ────────────────────────
       setGenStatus("creating_content");
       setStatusMessage("Creating your go-to-market plan...");
@@ -440,6 +536,9 @@ function LoadingContent() {
       if (audienceGroups) projectUpdate.audienceGroups = audienceGroups;
       if (posts) projectUpdate.posts = posts;
       if (suggestedQuestions) projectUpdate.suggestedQuestions = suggestedQuestions;
+      if (investors) projectUpdate.investors = investors;
+      if (teammates) projectUpdate.teammates = teammates;
+      if (linkedInPosts) projectUpdate.linkedInPosts = linkedInPosts;
 
       updateProject(pid, projectUpdate as Partial<import("@/lib/types").Project>);
 

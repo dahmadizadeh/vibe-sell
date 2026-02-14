@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { Loader2, Check } from "lucide-react";
 import { AppPreview } from "./AppPreview";
 
@@ -17,6 +17,7 @@ interface CodeGenerationProps {
   appTagline?: string;
   reactCode?: string;
   steps?: StepDef[];
+  stepStatusMessage?: string;
 }
 
 const DEFAULT_STEPS: StepDef[] = [
@@ -63,9 +64,26 @@ export function CodeGeneration({
   appTagline,
   reactCode,
   steps: stepsProp,
+  stepStatusMessage,
 }: CodeGenerationProps) {
   const codeRef = useRef<HTMLPreElement>(null);
   const steps = stepsProp || DEFAULT_STEPS;
+  const [countdown, setCountdown] = useState(180);
+  const countdownRef = useRef<ReturnType<typeof setInterval>>();
+
+  // Countdown timer
+  useEffect(() => {
+    if (status === "complete") {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      return;
+    }
+    countdownRef.current = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [status]);
 
   const displayCode = useMemo(() => {
     if (reactCode) return reactCode;
@@ -101,8 +119,39 @@ export function CodeGeneration({
         : stepKeys.indexOf("generating") + 1
       : currentIdx;
 
+  const progressPercent = status === "complete"
+    ? 100
+    : Math.min(((effectiveIdx + 0.5) / steps.length) * 100, 95);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `~${m}:${s.toString().padStart(2, "0")} remaining`;
+  };
+
   return (
     <div className="w-full max-w-5xl mx-auto">
+      {/* Progress bar */}
+      <div className="h-[3px] w-full bg-gray-100 rounded-full mb-4 overflow-hidden">
+        <div
+          className="h-full bg-brand-primary rounded-full"
+          style={{
+            width: `${progressPercent}%`,
+            transition: "width 0.5s ease",
+          }}
+        />
+      </div>
+
+      {/* App name prominent display */}
+      {appName && (
+        <div className="mb-3">
+          <h2 className="text-xl font-bold text-gray-900">{appName}</h2>
+          {appTagline && (
+            <p className="text-sm text-gray-500">{appTagline}</p>
+          )}
+        </div>
+      )}
+
       {/* Status bar */}
       <div className="flex items-center gap-3 mb-4">
         <div className="flex items-center gap-2">
@@ -114,16 +163,19 @@ export function CodeGeneration({
             <Loader2 className="w-5 h-5 text-brand-primary animate-spin" />
           )}
           <span className="text-sm font-medium text-gray-700">{statusMessage}</span>
+          {stepStatusMessage && (
+            <span className="text-xs text-gray-400 ml-1">{stepStatusMessage}</span>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-3">
+          {status !== "complete" && countdown > 0 && (
+            <span className="text-xs text-gray-400">
+              {formatTime(countdown)}
+            </span>
+          )}
           {isStreaming && charCount > 0 && (
             <span className="text-xs text-gray-400 font-mono">
               {Math.round(charCount / 10) * 10} chars
-            </span>
-          )}
-          {appName && (
-            <span className="text-sm text-gray-400">
-              {appName}{appTagline ? ` \u2014 ${appTagline}` : ""}
             </span>
           )}
         </div>

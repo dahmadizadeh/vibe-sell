@@ -15,8 +15,104 @@ import { useAppStore } from "@/lib/store";
 import { uniqueCompanies } from "@/lib/utils";
 import { PostCard } from "@/components/PostCard";
 import { ConversationsTab } from "@/components/ConversationsTab";
-import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage, PostTemplate, Conversation } from "@/lib/types";
+import type { Contact, EmailDraft, Targeting, ProductPage, PitchPage, PostTemplate, Conversation, LinkedInPost } from "@/lib/types";
 import { generateId } from "@/lib/utils";
+
+function LinkedInPostCard({ post }: { post: LinkedInPost }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(post.suggestedComment);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const truncatedContent = post.postContent.length > 300 && !expanded
+    ? post.postContent.slice(0, 300) + "..."
+    : post.postContent;
+
+  return (
+    <Card className="p-5">
+      {/* Author header */}
+      <div className="flex items-start gap-3 mb-3">
+        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-semibold text-sm shrink-0">
+          {post.authorName.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-gray-900 text-sm truncate">{post.authorName}</p>
+          <p className="text-xs text-gray-500 truncate">{post.authorTitle}{post.authorCompany ? ` at ${post.authorCompany}` : ""}</p>
+        </div>
+        {post.postDate && (
+          <span className="text-xs text-gray-400 shrink-0">{post.postDate}</span>
+        )}
+      </div>
+
+      {/* Post content */}
+      <div className="mb-3">
+        <p className="text-sm text-gray-700 whitespace-pre-wrap">{truncatedContent}</p>
+        {post.postContent.length > 300 && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs text-brand-primary font-medium mt-1 hover:underline"
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        )}
+      </div>
+
+      {/* Engagement metrics */}
+      {(post.likes !== undefined || post.comments !== undefined) && (
+        <div className="flex gap-4 text-xs text-gray-400 mb-3 pb-3 border-b border-gray-100">
+          {post.likes !== undefined && <span>{"\u{1F44D}"} {post.likes}</span>}
+          {post.comments !== undefined && <span>{"\u{1F4AC}"} {post.comments}</span>}
+        </div>
+      )}
+
+      {/* AI analysis */}
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Why this matters</p>
+          <p className="text-sm text-gray-700">{post.whyRelevant}</p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Comment strategy</p>
+          <p className="text-sm text-gray-700">{post.commentStrategy}</p>
+        </div>
+        {post.suggestedComment && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Suggested comment</p>
+              <button
+                onClick={handleCopy}
+                className="text-xs text-brand-primary font-medium hover:underline"
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-700 italic">
+              {post.suggestedComment}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* View post link */}
+      {post.postUrl && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <a
+            href={post.postUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-medium text-brand-primary hover:underline"
+          >
+            View Post on LinkedIn {"\u2192"}
+          </a>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 const BUILDER_TABS = [
   { key: "app" as const, label: "Your App" },
@@ -35,7 +131,7 @@ export default function ProjectPage() {
   const [composerContactId, setComposerContactId] = useState<string | null>(null);
   const [activeAudienceGroup, setActiveAudienceGroup] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"app" | "people" | "conversations" | "content">("app");
-  const [peopleSubTab, setPeopleSubTab] = useState<"customers" | "investors" | "teammates">("customers");
+  const [peopleSubTab, setPeopleSubTab] = useState<"customers" | "investors" | "teammates" | "linkedin">("customers");
   const [showAddUrl, setShowAddUrl] = useState(false);
   const [addUrlValue, setAddUrlValue] = useState("");
 
@@ -229,9 +325,9 @@ export default function ProjectPage() {
               }`}
             >
               {tab.label}
-              {tab.key === "people" && project.contacts.length > 0 && (
+              {tab.key === "people" && (project.contacts.length + (project.investors?.length || 0) + (project.teammates?.length || 0)) > 0 && (
                 <span className="ml-1.5 text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">
-                  {project.contacts.length}
+                  {project.contacts.length + (project.investors?.length || 0) + (project.teammates?.length || 0)}
                 </span>
               )}
               {tab.key === "conversations" && project.conversations && project.conversations.length > 0 && (
@@ -447,11 +543,12 @@ export default function ProjectPage() {
         {activeTab === "people" && (
           <div>
             {/* Sub-tab navigation */}
-            <div className="flex gap-1 mb-4">
+            <div className="flex gap-1 mb-4 flex-wrap">
               {[
                 { key: "customers" as const, label: "Users & Customers", icon: "\u{1F465}" },
                 { key: "investors" as const, label: "Investors", icon: "\u{1F4B0}" },
                 { key: "teammates" as const, label: "Teammates", icon: "\u{1F91D}" },
+                { key: "linkedin" as const, label: "LinkedIn Posts", icon: "\u{1F4AC}" },
               ].map((sub) => (
                 <button
                   key={sub.key}
@@ -536,44 +633,101 @@ export default function ProjectPage() {
 
             {/* Sub-tab: Investors */}
             {peopleSubTab === "investors" && (
-              <Card className="p-8">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                    <span className="text-3xl">{"\u{1F4C8}"}</span>
+              <Card className="p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                  Investors
+                </h2>
+                <p className="text-sm text-gray-500 mb-3">
+                  VCs, angels, and fund partners who invest in your space
+                </p>
+
+                {project.dataSource === "live" && project.investors && project.investors.length > 0 && (
+                  <div className="bg-green-50 border border-green-200 text-green-800 px-3 py-2 rounded-lg text-sm mb-4">
+                    Live data from 700M+ professional profiles
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Find Investors for Your Idea
-                  </h3>
-                  <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
-                    Discover VCs, angels, and fund partners who invest in your space.
-                    We&apos;ll match you with investors based on their portfolio, stage preference, and thesis.
-                  </p>
-                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm font-medium">
-                    <span>{"\u{1F680}"}</span> Coming Soon
+                )}
+
+                {project.investors && project.investors.length > 0 ? (
+                  <ContactList
+                    contacts={project.investors}
+                    onWriteEmail={handleWriteEmail}
+                    emailDrafts={project.emailDrafts}
+                  />
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <span className="text-3xl">{"\u{1F4C8}"}</span>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      No investors found. Try re-running the analysis with a more specific description.
+                    </p>
                   </div>
-                </div>
+                )}
               </Card>
             )}
 
             {/* Sub-tab: Teammates */}
             {peopleSubTab === "teammates" && (
-              <Card className="p-8">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                    <span className="text-3xl">{"\u{1F9D1}\u{200D}\u{1F4BB}"}</span>
+              <Card className="p-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                  Teammates
+                </h2>
+                <p className="text-sm text-gray-500 mb-3">
+                  Engineers, designers, and operators for your founding team
+                </p>
+
+                {project.dataSource === "live" && project.teammates && project.teammates.length > 0 && (
+                  <div className="bg-green-50 border border-green-200 text-green-800 px-3 py-2 rounded-lg text-sm mb-4">
+                    Live data from 700M+ professional profiles
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    Find Co-Founders &amp; Early Hires
-                  </h3>
-                  <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
-                    Find engineers, designers, and operators who match the skills your startup needs.
-                    We&apos;ll identify talent with relevant experience and startup appetite.
-                  </p>
-                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium">
-                    <span>{"\u{1F680}"}</span> Coming Soon
+                )}
+
+                {project.teammates && project.teammates.length > 0 ? (
+                  <ContactList
+                    contacts={project.teammates}
+                    onWriteEmail={handleWriteEmail}
+                    emailDrafts={project.emailDrafts}
+                  />
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <span className="text-3xl">{"\u{1F9D1}\u{200D}\u{1F4BB}"}</span>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      No teammates found. Try re-running the analysis with a more specific description.
+                    </p>
                   </div>
-                </div>
+                )}
               </Card>
+            )}
+
+            {/* Sub-tab: LinkedIn Posts */}
+            {peopleSubTab === "linkedin" && (
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 mb-1">
+                  LinkedIn Posts
+                </h2>
+                <p className="text-sm text-gray-500 mb-4">
+                  Engage with people already talking about your space
+                </p>
+
+                {project.linkedInPosts && project.linkedInPosts.length > 0 ? (
+                  <div className="space-y-4">
+                    {project.linkedInPosts.map((post) => (
+                      <LinkedInPostCard key={post.id} post={post} />
+                    ))}
+                  </div>
+                ) : (
+                  <Card className="p-8 text-center">
+                    <div className="w-16 h-16 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <span className="text-3xl">{"\u{1F4AC}"}</span>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      No LinkedIn posts found. Try re-running the analysis with a more specific description.
+                    </p>
+                  </Card>
+                )}
+              </div>
             )}
           </div>
         )}
