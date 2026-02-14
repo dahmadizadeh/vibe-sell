@@ -41,6 +41,36 @@ export default function PublicProductPage() {
 
   const page = project.productPage;
 
+  // If we have an external URL, render it in an iframe
+  if (project.externalAppUrl) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="border-b border-gray-100 px-4 py-3 flex items-center justify-between">
+          <div>
+            <span className="font-semibold text-gray-900">{page.name}</span>
+            <span className="text-gray-400 text-sm ml-2">{page.tagline}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => window.open(project.externalAppUrl, "_blank")}
+              className="text-xs text-brand-primary hover:underline"
+            >
+              Open Original
+            </button>
+            <span className="text-xs text-gray-400">{COPY.shareableFooter}</span>
+          </div>
+        </div>
+        <iframe
+          src={project.externalAppUrl}
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          className="w-full border-0"
+          style={{ height: "calc(100vh - 53px)" }}
+          title="App preview"
+        />
+      </div>
+    );
+  }
+
   // If we have generated React code, render the live app full-screen
   if (page.reactCode) {
     return (

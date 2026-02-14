@@ -36,6 +36,8 @@ export default function ProjectPage() {
   const [activeAudienceGroup, setActiveAudienceGroup] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"app" | "people" | "conversations" | "content">("app");
   const [peopleSubTab, setPeopleSubTab] = useState<"customers" | "investors" | "teammates">("customers");
+  const [showAddUrl, setShowAddUrl] = useState(false);
+  const [addUrlValue, setAddUrlValue] = useState("");
 
   useEffect(() => {
     hydrate();
@@ -249,7 +251,39 @@ export default function ProjectPage() {
         {/* Tab 1: Your App */}
         {activeTab === "app" && (
           <>
-            {project.productPage?.reactCode && (
+            {/* External URL iframe */}
+            {project.externalAppUrl && (
+              <Card className="p-0 mb-6 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <div>
+                    <span className="font-semibold text-gray-900">
+                      {project.productPage?.name || project.title}
+                    </span>
+                    {project.productPage?.tagline && (
+                      <span className="text-gray-400 text-sm ml-2">
+                        {project.productPage.tagline}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => window.open(project.externalAppUrl, "_blank")}
+                    className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
+                  >
+                    Open Original
+                  </button>
+                </div>
+                <iframe
+                  src={project.externalAppUrl}
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                  className="w-full border-0"
+                  style={{ height: "400px" }}
+                  title="App preview"
+                />
+              </Card>
+            )}
+
+            {/* Generated React code (no external URL) */}
+            {!project.externalAppUrl && project.productPage?.reactCode && (
               <Card className="p-0 mb-6 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                   <div>
@@ -282,7 +316,47 @@ export default function ProjectPage() {
               </Card>
             )}
 
-            {project.productPage && !project.productPage.reactCode && (
+            {/* Description only (no URL, no reactCode) */}
+            {project.source === 'description' && !project.externalAppUrl && !project.productPage?.reactCode && (
+              <Card className="p-6 mb-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  {project.productPage?.name || project.title}
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">{project.description}</p>
+                {!showAddUrl ? (
+                  <button
+                    onClick={() => setShowAddUrl(true)}
+                    className="px-3 py-1.5 text-xs font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
+                  >
+                    Add URL
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={addUrlValue}
+                      onChange={(e) => setAddUrlValue(e.target.value)}
+                      placeholder="https://my-app.lovable.app"
+                      className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary"
+                    />
+                    <button
+                      onClick={() => {
+                        if (addUrlValue.trim()) {
+                          updateProject(id, { externalAppUrl: addUrlValue.trim(), source: 'url' });
+                          setShowAddUrl(false);
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium text-white bg-brand-primary rounded-lg hover:bg-brand-primary/90 transition-colors"
+                    >
+                      Save
+                    </button>
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {/* Fallback: productPage exists but no reactCode, no external URL, not description source */}
+            {project.source !== 'description' && !project.externalAppUrl && project.productPage && !project.productPage.reactCode && (
               <Card className="p-6 mb-6">
                 <div className="text-center py-8">
                   <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
@@ -300,7 +374,7 @@ export default function ProjectPage() {
               </Card>
             )}
 
-            {!project.productPage && (
+            {!project.productPage && !project.externalAppUrl && project.source !== 'description' && (
               <Card className="p-6 mb-6">
                 <div className="text-center py-8">
                   <div className="text-4xl mb-4">&#x1F6E0;&#xFE0F;</div>
@@ -310,6 +384,41 @@ export default function ProjectPage() {
                   <p className="text-sm text-gray-500 max-w-md mx-auto">
                     App generation may have failed. Try creating a new project with a different description.
                   </p>
+                </div>
+              </Card>
+            )}
+
+            {/* Imported Analysis Card */}
+            {project.importedAnalysis && (
+              <Card className="p-6 mb-6">
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                  Product Analysis
+                </h3>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-xs font-medium text-gray-400">Problem Solved</span>
+                    <p className="text-sm text-gray-700">{project.importedAnalysis.problemSolved}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-gray-400">Target User</span>
+                    <p className="text-sm text-gray-700">{project.importedAnalysis.targetUser}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-medium text-gray-400">Industry</span>
+                    <p className="text-sm text-gray-700">{project.importedAnalysis.industry}</p>
+                  </div>
+                  {project.importedAnalysis.competitors.length > 0 && (
+                    <div>
+                      <span className="text-xs font-medium text-gray-400">Competitors</span>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {project.importedAnalysis.competitors.map((c, i) => (
+                          <span key={i} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </Card>
             )}

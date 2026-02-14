@@ -7,7 +7,8 @@ import { LoadingSteps } from "@/components/LoadingSteps";
 import { CodeGeneration } from "@/components/CodeGeneration";
 import { useAppStore } from "@/lib/store";
 import { getSellerMockData } from "@/lib/mock-data";
-import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup, PostTemplate } from "@/lib/types";
+import type { Contact, PitchPage, ProductPage, Targeting, EmailDraft, ViabilityAnalysis, AudienceGroup, PostTemplate, ImportedAnalysis } from "@/lib/types";
+import { generateSlug } from "@/lib/utils";
 
 // ─── Cache Helpers ───────────────────────────────────────────────────────────
 
@@ -55,13 +56,28 @@ type BuilderStep =
   | "creating_content"
   | "complete";
 
-const BUILDER_STEPS: { key: string; label: string }[] = [
-  { key: "generating", label: "Build App" },
-  { key: "analyzing", label: "Analyze Viability" },
-  { key: "finding_customers", label: "Find Real People" },
-  { key: "creating_content", label: "Go-to-Market Plan" },
-  { key: "complete", label: "Done" },
-];
+function getBuilderSteps(source?: string): { key: string; label: string }[] {
+  if (source === 'url') return [
+    { key: "generating", label: "Analyze Your Product" },
+    { key: "analyzing", label: "Analyze Viability" },
+    { key: "finding_customers", label: "Find Real People" },
+    { key: "creating_content", label: "Go-to-Market Plan" },
+    { key: "complete", label: "Done" },
+  ];
+  if (source === 'description') return [
+    { key: "analyzing", label: "Analyze Viability" },
+    { key: "finding_customers", label: "Find Real People" },
+    { key: "creating_content", label: "Go-to-Market Plan" },
+    { key: "complete", label: "Done" },
+  ];
+  return [
+    { key: "generating", label: "Build App" },
+    { key: "analyzing", label: "Analyze Viability" },
+    { key: "finding_customers", label: "Find Real People" },
+    { key: "creating_content", label: "Go-to-Market Plan" },
+    { key: "complete", label: "Done" },
+  ];
+}
 
 // ─── Loading Content ─────────────────────────────────────────────────────────
 
@@ -109,7 +125,7 @@ function LoadingContent() {
 
   // Show progressive placeholder while API is pending
   useEffect(() => {
-    if (genStatus !== "generating" || reactCode) return;
+    if (genStatus !== "generating" || reactCode || project?.source === 'url' || project?.source === 'description') return;
     const lines = [
       "// Analyzing your idea...",
       "// Setting up React component...",
@@ -138,58 +154,105 @@ function LoadingContent() {
       }
     }, 40);
     return () => clearInterval(interval);
-  }, [genStatus, reactCode]);
+  }, [genStatus, reactCode, project?.source]);
 
   const runBuilderFlow = useCallback(
-    async (pid: string, description: string) => {
+    async (pid: string, description: string, source?: string, externalAppUrl?: string) => {
       let targeting: Targeting | undefined;
       let productPage: ProductPage | undefined;
       let viabilityAnalysis: ViabilityAnalysis | undefined;
       let audienceGroups: AudienceGroup[] | undefined;
       let posts: PostTemplate[] | undefined;
       let suggestedQuestions: string[] | undefined;
+      let enrichedDescription = description;
 
-      // ── Step 1: Build the app ──────────────────────────────────────
-      setGenStatus("generating");
-      setStatusMessage("Building your app...");
+      // ── Step 1: Build the app / Analyze URL / Skip ─────────────────
+      if (source === 'url' && externalAppUrl) {
+        // URL import: analyze the external URL
+        setGenStatus("generating");
+        setStatusMessage("Analyzing your product...");
 
-      try {
-        const res = await fetch("/api/analyze-idea", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description }),
-        });
+        try {
+          const res = await fetch("/api/analyze-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: externalAppUrl }),
+          });
 
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({}));
-          console.error("[loading] analyze-idea API error:", errorData._error || res.statusText);
-          addStepDetail("App generation encountered an issue \u2014 continuing with analysis...");
-        } else {
-          const result = await res.json();
+          if (res.ok) {
+            const result = await res.json();
+            if (result.analysis) {
+              const analysis = result.analysis as ImportedAnalysis;
+              updateProject(pid, { importedAnalysis: analysis });
 
-          if (result.productPage?.reactCode) {
-            productPage = result.productPage;
-            targeting = result.targeting || targeting;
+              // Enrich description for subsequent steps
+              enrichedDescription = `${analysis.name}: ${analysis.description}. Target user: ${analysis.targetUser}. Industry: ${analysis.industry}. ${description}`;
 
-            setAppName(productPage!.name);
-            setAppTagline(productPage!.tagline);
-            setGenStatus("app_ready");
-            setStatusMessage(`${productPage!.name} built!`);
-            addStepDetail(`Generated "${productPage!.name}" \u2014 ${productPage!.tagline}`);
+              // Build a minimal productPage (no reactCode)
+              productPage = {
+                name: analysis.name,
+                tagline: analysis.tagline,
+                features: analysis.features,
+                shareUrl: `/p/${generateSlug(analysis.name)}`,
+              };
 
-            animateCode(productPage!.reactCode!);
-            setReactCode(productPage!.reactCode);
-
-            await new Promise((r) => setTimeout(r, 2000));
-          } else if (result.productPage) {
-            productPage = result.productPage;
-            targeting = result.targeting || targeting;
-            setAppName(productPage!.name);
+              setAppName(analysis.name);
+              setAppTagline(analysis.tagline);
+              addStepDetail(`Analyzed "${analysis.name}" \u2014 ${analysis.tagline}`);
+            }
+          } else {
+            console.warn("[loading] analyze-url failed, continuing with raw description");
+            addStepDetail("Could not analyze URL \u2014 continuing with your description...");
           }
+        } catch (err) {
+          console.warn("[loading] analyze-url fetch failed:", err);
+          addStepDetail("Could not reach URL \u2014 continuing with your description...");
         }
-      } catch (err) {
-        console.error("[loading] analyze-idea fetch failed:", err);
-        addStepDetail("App generation failed \u2014 check API key configuration");
+      } else if (source === 'description') {
+        // Description-only: skip Step 1 entirely
+      } else {
+        // Default idea flow: generate app
+        setGenStatus("generating");
+        setStatusMessage("Building your app...");
+
+        try {
+          const res = await fetch("/api/analyze-idea", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ description }),
+          });
+
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            console.error("[loading] analyze-idea API error:", errorData._error || res.statusText);
+            addStepDetail("App generation encountered an issue \u2014 continuing with analysis...");
+          } else {
+            const result = await res.json();
+
+            if (result.productPage?.reactCode) {
+              productPage = result.productPage;
+              targeting = result.targeting || targeting;
+
+              setAppName(productPage!.name);
+              setAppTagline(productPage!.tagline);
+              setGenStatus("app_ready");
+              setStatusMessage(`${productPage!.name} built!`);
+              addStepDetail(`Generated "${productPage!.name}" \u2014 ${productPage!.tagline}`);
+
+              animateCode(productPage!.reactCode!);
+              setReactCode(productPage!.reactCode);
+
+              await new Promise((r) => setTimeout(r, 2000));
+            } else if (result.productPage) {
+              productPage = result.productPage;
+              targeting = result.targeting || targeting;
+              setAppName(productPage!.name);
+            }
+          }
+        } catch (err) {
+          console.error("[loading] analyze-idea fetch failed:", err);
+          addStepDetail("App generation failed \u2014 check API key configuration");
+        }
       }
 
       // ── Step 2: Analyze viability + smart targeting (parallel) ─────
@@ -201,7 +264,7 @@ function LoadingContent() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            description,
+            description: enrichedDescription,
             appName: productPage?.name || "My App",
           }),
         });
@@ -330,7 +393,7 @@ function LoadingContent() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            description,
+            description: enrichedDescription,
             appName: productPage?.name || "My App",
             shareUrl: productPage?.shareUrl || "",
             audienceGroups: audienceGroups || [],
@@ -480,7 +543,7 @@ function LoadingContent() {
     }
 
     if (proj.mode === "builder") {
-      runBuilderFlow(projectId, proj.description);
+      runBuilderFlow(projectId, proj.description, proj.source, proj.externalAppUrl);
     } else {
       runSellerFlow(projectId, proj.description, proj.targetCompanies || []);
     }
@@ -498,7 +561,7 @@ function LoadingContent() {
             appName={appName}
             appTagline={appTagline}
             reactCode={reactCode}
-            steps={BUILDER_STEPS}
+            steps={getBuilderSteps(project?.source)}
           />
           {/* Step completion details */}
           {stepDetails.length > 0 && (

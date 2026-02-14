@@ -39,9 +39,10 @@ function HeroInput({ dark }: { dark?: boolean }) {
   const [placeholderIdx, setPlaceholderIdx] = useState(0);
   const [typing, setTyping] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
+  const [inputMode, setInputMode] = useState<'idea' | 'url'>('idea');
 
   useEffect(() => {
-    if (value) return;
+    if (value || inputMode === 'url') return;
     const target = PLACEHOLDER_IDEAS[placeholderIdx];
     let timeout: ReturnType<typeof setTimeout>;
 
@@ -60,36 +61,68 @@ function HeroInput({ dark }: { dark?: boolean }) {
       }
     }
     return () => clearTimeout(timeout);
-  }, [typing, isDeleting, placeholderIdx, value]);
+  }, [typing, isDeleting, placeholderIdx, value, inputMode]);
 
   const handleSubmit = () => {
-    const idea = value.trim();
-    if (!idea) return;
-    router.push(`/create?idea=${encodeURIComponent(idea)}&mode=builder`);
+    const input = value.trim();
+    if (!input) return;
+    if (inputMode === 'url') {
+      router.push(`/create?url=${encodeURIComponent(input)}&source=url&mode=builder`);
+    } else {
+      router.push(`/create?idea=${encodeURIComponent(input)}&mode=builder`);
+    }
   };
 
   return (
-    <div className="relative w-full max-w-2xl mx-auto">
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
-        placeholder={value ? "" : typing + "|"}
-        className={`w-full h-14 pl-5 pr-14 rounded-xl text-base transition-all outline-none ${
-          dark
-            ? "bg-white/[0.07] border border-white/[0.12] text-white placeholder-white/30 focus:border-[#2E75B6] focus:ring-2 focus:ring-[#2E75B6]/40 focus:bg-white/[0.1]"
-            : "bg-white border border-slate-200 text-slate-900 placeholder-slate-400 focus:border-[#2E75B6] focus:ring-2 focus:ring-[#2E75B6]/30 shadow-lg shadow-black/5"
-        }`}
-      />
-      <button
-        onClick={handleSubmit}
-        className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-lg bg-[#2E75B6] hover:bg-[#245f99] text-white flex items-center justify-center transition-colors"
-        style={{ animation: value ? "none" : "pulse-subtle 2s ease-in-out infinite" }}
-        aria-label="Submit idea"
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-      </button>
+    <div className="w-full max-w-2xl mx-auto">
+      {/* Segmented toggle */}
+      <div className="flex justify-center mb-4">
+        <div className={`inline-flex rounded-lg p-0.5 ${dark ? "bg-white/[0.08]" : "bg-slate-100"}`}>
+          <button
+            onClick={() => { setInputMode('idea'); setValue(""); }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              inputMode === 'idea'
+                ? dark ? "bg-white/[0.15] text-white" : "bg-white text-slate-900 shadow-sm"
+                : dark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            I have an idea
+          </button>
+          <button
+            onClick={() => { setInputMode('url'); setValue(""); }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              inputMode === 'url'
+                ? dark ? "bg-white/[0.15] text-white" : "bg-white text-slate-900 shadow-sm"
+                : dark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            I already built it
+          </button>
+        </div>
+      </div>
+
+      <div className="relative">
+        <input
+          type={inputMode === 'url' ? "url" : "text"}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+          placeholder={inputMode === 'url' ? "Paste your app URL (Lovable, Replit, V0, etc.)" : (value ? "" : typing + "|")}
+          className={`w-full h-14 pl-5 pr-14 rounded-xl text-base transition-all outline-none ${
+            dark
+              ? "bg-white/[0.07] border border-white/[0.12] text-white placeholder-white/30 focus:border-[#2E75B6] focus:ring-2 focus:ring-[#2E75B6]/40 focus:bg-white/[0.1]"
+              : "bg-white border border-slate-200 text-slate-900 placeholder-slate-400 focus:border-[#2E75B6] focus:ring-2 focus:ring-[#2E75B6]/30 shadow-lg shadow-black/5"
+          }`}
+        />
+        <button
+          onClick={handleSubmit}
+          className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-lg bg-[#2E75B6] hover:bg-[#245f99] text-white flex items-center justify-center transition-colors"
+          style={{ animation: value ? "none" : "pulse-subtle 2s ease-in-out infinite" }}
+          aria-label="Submit"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+      </div>
     </div>
   );
 }
@@ -652,6 +685,12 @@ export default function LandingPage() {
             </p>
             <p className="text-center text-xs text-slate-400 mt-4 max-w-md mx-auto">
               We love Lovable, Replit, and V0. They&apos;re incredible at building. We pick up where they leave off.
+            </p>
+            <p className="text-center text-sm text-slate-500 mt-6">
+              Already built on Lovable, Replit, or V0?{" "}
+              <a href="/create?mode=builder" className="text-[#2E75B6] hover:underline underline-offset-2 font-medium">
+                Import it and find your first customers.
+              </a>
             </p>
           </Section>
         </div>

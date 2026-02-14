@@ -17,6 +17,8 @@ interface AppState {
     title: string;
     description: string;
     targetCompanies?: string[];
+    source?: 'idea' | 'url' | 'description';
+    externalAppUrl?: string;
   }) => string; // returns project id
   getProject: (id: string) => Project | undefined;
   updateProject: (id: string, partial: Partial<Project>) => void;
@@ -54,7 +56,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ projects, userProfile });
   },
 
-  createProject: ({ mode, title, description, targetCompanies }) => {
+  createProject: ({ mode, title, description, targetCompanies, source, externalAppUrl }) => {
     const id = generateId();
     const project: Project = {
       id,
@@ -67,6 +69,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       emailDrafts: [],
       stats: { contactsFound: 0, emailsSent: 0, replies: 0, meetingsBooked: 0 },
       targetCompanies,
+      source: source || 'idea',
+      externalAppUrl,
     };
     saveProject(project);
     set((state) => ({ projects: [...state.projects, project], currentProjectId: id }));

@@ -16,12 +16,20 @@ function CreateContent() {
   const searchParams = useSearchParams();
   const initialIdea = searchParams.get("idea");
   const initialMode = searchParams.get("mode") as ProjectMode | null;
+  const initialSource = searchParams.get("source");
+  const initialUrl = searchParams.get("url");
 
   const [mode, setMode] = useState<ProjectMode>(initialMode || "seller");
   const router = useRouter();
   const { projects, createProject, hydrate, userProfile, setUserProfile } = useAppStore();
   const [hydrated, setHydrated] = useState(false);
   const autoStartedRef = useRef(false);
+
+  // Import sub-mode state
+  const [builderSubMode, setBuilderSubMode] = useState<'idea' | 'import'>('idea');
+  const [importUrl, setImportUrl] = useState("");
+  const [importDescription, setImportDescription] = useState("");
+  const [importError, setImportError] = useState("");
 
   // User setup modal
   const [showSetup, setShowSetup] = useState(false);
@@ -37,11 +45,11 @@ function CreateContent() {
   useEffect(() => {
     if (hydrated && !userProfile) {
       // Don't show setup if auto-starting from landing page
-      if (!initialIdea) {
+      if (!initialIdea && !(initialSource === 'url' && initialUrl)) {
         setShowSetup(true);
       }
     }
-  }, [hydrated, userProfile, initialIdea]);
+  }, [hydrated, userProfile, initialIdea, initialSource, initialUrl]);
 
   const handleBuilderSubmit = (description: string, notes?: string) => {
     const fullDescription = notes ? `${description}\n\nAdditional context: ${notes}` : description;
@@ -64,6 +72,26 @@ function CreateContent() {
     router.push(`/loading?projectId=${id}`);
   };
 
+  const handleImportSubmit = () => {
+    const url = importUrl.trim();
+    const desc = importDescription.trim();
+    if (!url && !desc) {
+      setImportError(COPY.importValidation);
+      return;
+    }
+    setImportError("");
+    const source: 'url' | 'description' = url ? 'url' : 'description';
+    const title = desc ? desc.slice(0, 60) : url;
+    const id = createProject({
+      mode: "builder",
+      title,
+      description: desc || url,
+      source,
+      externalAppUrl: url || undefined,
+    });
+    router.push(`/loading?projectId=${id}`);
+  };
+
   // Auto-start builder flow if ?idea= is present from landing page
   useEffect(() => {
     if (hydrated && initialIdea && !autoStartedRef.current) {
@@ -71,6 +99,21 @@ function CreateContent() {
       handleBuilderSubmit(initialIdea);
     }
   }, [hydrated, initialIdea]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-start URL import flow if ?source=url&url=... is present from landing page
+  useEffect(() => {
+    if (hydrated && initialSource === 'url' && initialUrl && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      const id = createProject({
+        mode: "builder",
+        title: initialUrl,
+        description: initialUrl,
+        source: 'url',
+        externalAppUrl: initialUrl,
+      });
+      router.push(`/loading?projectId=${id}`);
+    }
+  }, [hydrated, initialSource, initialUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSetupSubmit = () => {
     if (!setupName.trim()) return;
@@ -91,7 +134,7 @@ function CreateContent() {
     : [];
 
   // If auto-starting, show a loading spinner
-  if (initialIdea) {
+  if (initialIdea || (initialSource === 'url' && initialUrl)) {
     return (
       <div className="min-h-[calc(100vh-56px)] flex items-center justify-center">
         <div className="text-center">
@@ -154,7 +197,75 @@ function CreateContent() {
 
         <div className="mt-8 animate-fade-in" key={mode}>
           {mode === "builder" ? (
-            <BuilderForm onSubmit={handleBuilderSubmit} />
+            <>
+              {/* Segmented toggle: idea vs import */}
+              <div className="flex justify-center mb-6">
+                <div className="inline-flex bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setBuilderSubMode('idea')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      builderSubMode === 'idea'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {COPY.builderToggleIdea}
+                  </button>
+                  <button
+                    onClick={() => setBuilderSubMode('import')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      builderSubMode === 'import'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {COPY.builderToggleBuilt}
+                  </button>
+                </div>
+              </div>
+
+              {builderSubMode === 'idea' ? (
+                <BuilderForm onSubmit={handleBuilderSubmit} />
+              ) : (
+                <Card className="p-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        {COPY.importUrlLabel}
+                      </label>
+                      <input
+                        type="url"
+                        value={importUrl}
+                        onChange={(e) => { setImportUrl(e.target.value); setImportError(""); }}
+                        placeholder={COPY.importUrlPlaceholder}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-base text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Works with Lovable, Replit, Vercel, or any URL
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        {COPY.importDescLabel}
+                      </label>
+                      <textarea
+                        value={importDescription}
+                        onChange={(e) => { setImportDescription(e.target.value); setImportError(""); }}
+                        placeholder={COPY.importDescPlaceholder}
+                        rows={3}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-base text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary resize-none"
+                      />
+                    </div>
+                    {importError && (
+                      <p className="text-sm text-red-500">{importError}</p>
+                    )}
+                    <Button fullWidth onClick={handleImportSubmit}>
+                      {COPY.importSubmit}
+                    </Button>
+                  </div>
+                </Card>
+              )}
+            </>
           ) : (
             <SellerForm onSubmit={handleSellerSubmit} />
           )}

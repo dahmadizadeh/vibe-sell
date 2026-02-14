@@ -24,6 +24,9 @@ export interface Project {
   conversations?: Conversation[];
   suggestedQuestions?: string[];
   pmfScore?: PMFScore;
+  source?: 'idea' | 'url' | 'description';
+  externalAppUrl?: string;
+  importedAnalysis?: ImportedAnalysis;
 }
 
 export interface Targeting {
@@ -185,4 +188,15 @@ export interface UserProfile {
   name: string;
   company: string;
   email: string;
+}
+
+export interface ImportedAnalysis {
+  name: string;
+  tagline: string;
+  description: string;
+  problemSolved: string;
+  targetUser: string;
+  features: string[];
+  industry: string;
+  competitors: string[];
 }

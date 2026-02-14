@@ -29,6 +29,18 @@ export const COPY = {
     "e.g. We're targeting mid-market companies in the US, our price point is $200/mo",
   builderSubmit: "Find My First 100 Customers →",
 
+  // Builder — Import toggle
+  builderToggleIdea: "I have an idea",
+  builderToggleBuilt: "I already built it",
+
+  // Builder — Import form
+  importUrlLabel: "Link to your app (optional)",
+  importUrlPlaceholder: "e.g. https://my-app.lovable.app",
+  importDescLabel: "What does it do?",
+  importDescPlaceholder: "e.g. A dashboard that helps recruiting teams track candidate progress across stages",
+  importSubmit: "Find My Customers →",
+  importValidation: "Please provide a URL or a description",
+
   // Home — Seller form
   sellerFieldLabel: "What does your product do for them?",
   sellerFieldPlaceholder:
