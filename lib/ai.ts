@@ -6,19 +6,7 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-export async function generateApp(description: string): Promise<{
-  name: string;
-  tagline: string;
-  features: string[];
-  reactCode: string;
-}> {
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "user",
-        content: `You are a product designer and React developer. A user described this app idea:
+const APP_PROMPT = (description: string) => `You are a product designer and React developer. A user described this app idea:
 
 "${description}"
 
@@ -35,7 +23,7 @@ Generate:
    - Include at least 3 screens/views accessible via tabs or navigation
    - Use React.useState for interactivity (use React.useState, not destructured useState)
    - Do NOT use import statements — React is available as a global
-   - Do NOT use JSX fragments (<>...</>) — use React.createElement or <div> wrappers instead
+   - Do NOT use JSX fragments (<>...</>) — use <div> wrappers instead
 
 For example, if the user says "dating app for Farsi speakers", build an actual dating app UI with:
 - Profile cards with Farsi names and bios
@@ -52,13 +40,54 @@ Return ONLY valid JSON with this exact structure:
   "reactCode": "function App() { ... }\\nexport default App;"
 }
 
-CRITICAL: The reactCode value must be a valid JSON string (escape all newlines as \\n, escape all quotes). No markdown fences. No explanation. Just the JSON object.`,
-      },
-    ],
+CRITICAL: The reactCode value must be a valid JSON string (escape all newlines as \\n, escape all quotes). No markdown fences. No explanation. Just the JSON object.`;
+
+export async function generateApp(description: string): Promise<{
+  name: string;
+  tagline: string;
+  features: string[];
+  reactCode: string;
+}> {
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: APP_PROMPT(description) }],
   });
 
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
+  return parseAppResponse(text);
+}
+
+/**
+ * Streaming version of generateApp. Yields raw text chunks as they arrive.
+ * Call parseAppResponse() on the accumulated text when done.
+ */
+export async function* generateAppStream(
+  description: string
+): AsyncGenerator<string, void, unknown> {
+  const stream = client.messages.stream({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: APP_PROMPT(description) }],
+  });
+
+  for await (const event of stream) {
+    if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta"
+    ) {
+      yield event.delta.text;
+    }
+  }
+}
+
+export function parseAppResponse(text: string): {
+  name: string;
+  tagline: string;
+  features: string[];
+  reactCode: string;
+} {
   const cleaned = text
     .replace(/```json\n?/g, "")
     .replace(/```\n?/g, "")
