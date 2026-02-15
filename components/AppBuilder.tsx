@@ -27,22 +27,24 @@ const QUICK_CHIPS = [
   "Add loading states",
 ];
 
-function cleanCode(raw: string): string {
-  let code = raw;
-  code = code.replace(/^import\s+.*?[\r\n]+/gm, "");
-  code = code.replace(/export\s+default\s+function\s+/g, "function ");
-  code = code.replace(/export\s+default\s+\w+\s*;?\s*$/gm, "");
-  code = code.replace(/export\s+function\s+/g, "function ");
-  code = code.replace(/export\s+const\s+/g, "const ");
-  code = code.replace(/^export\s+/gm, "");
-  return code.trim();
+function cleanCodeForBrowser(raw: string): string {
+  return raw
+    // Remove 'use client' directive
+    .replace(/['"]use client['"]\s*;?\n?/g, "")
+    // Remove import statements (React is already loaded as UMD global)
+    .replace(/import\s+.*?\s+from\s+['"]react['"]\s*;?\n?/g, "")
+    .replace(/import\s+.*?\s+from\s+['"].*?['"]\s*;?\n?/g, "")
+    // Convert "export default function" to just "function"
+    .replace(/export\s+default\s+function/g, "function")
+    // Remove any remaining "export default"
+    .replace(/export\s+default\s+/g, "")
+    // Remove any remaining "export" keywords
+    .replace(/^export\s+/gm, "")
+    .trim();
 }
 
 function buildIframeHtml(code: string): string {
-  const cleaned = cleanCode(code);
-  // We use a script tag with type text/babel so Babel transpiles it in-browser.
-  // The code is embedded directly — no template literal escaping needed since
-  // we inject it as a text node via a separate script block.
+  const cleaned = cleanCodeForBrowser(code);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,24 +63,26 @@ function buildIframeHtml(code: string): string {
 <body>
   <div id="root"></div>
   <div id="error-display"></div>
-  <script type="text/babel" data-type="module">
-    try {
-      ${cleaned}
+  <script>
+    window.onerror = function(msg, url, line, col, error) {
+      document.getElementById('root').innerHTML = '<pre style="color:red;padding:20px;">' + msg + '\\nLine: ' + line + '</pre>';
+      try { window.parent.postMessage({ type: 'app-preview-error', error: String(msg) }, '*'); } catch(e) {}
+    };
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback, useRef, useReducer, createContext, useContext, Fragment } = React;
 
-      const rootEl = document.getElementById('root');
-      const root = ReactDOM.createRoot(rootEl);
-      const Component = typeof App !== 'undefined' ? App : null;
+    ${cleaned}
 
-      if (Component) {
-        root.render(React.createElement(Component));
-      } else {
-        document.getElementById('error-display').style.display = 'block';
-        document.getElementById('error-display').textContent = 'No App component found in generated code.';
-      }
-    } catch (err) {
+    const rootEl = document.getElementById('root');
+    const root = ReactDOM.createRoot(rootEl);
+    const Component = typeof App !== 'undefined' ? App : null;
+
+    if (Component) {
+      root.render(React.createElement(Component));
+    } else {
       document.getElementById('error-display').style.display = 'block';
-      document.getElementById('error-display').textContent = 'Render error: ' + err.message + '\\n\\n' + err.stack;
-      window.parent.postMessage({ type: 'app-preview-error', error: err.message }, '*');
+      document.getElementById('error-display').textContent = 'No App component found in generated code.';
     }
   </script>
 </body>
