@@ -98,7 +98,7 @@ function buildIframeHtml(code: string): string {
 
     try {
       var code = ${encodedCode};
-      var transformed = Babel.transform(code, { presets: ['react', 'typescript'] }).code;
+      var transformed = Babel.transform(code, { presets: ['react', 'typescript'], filename: 'app.tsx' }).code;
       var result = new Function(
         'React', 'ReactDOM',
         'useState', 'useEffect', 'useMemo', 'useCallback',
