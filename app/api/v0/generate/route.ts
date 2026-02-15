@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { prompt, existingCode } = await req.json();
+  const { prompt, existingCode, images } = await req.json();
 
   const isEdit = !!existingCode;
 
@@ -33,9 +33,25 @@ export default function App() { ... }
 
 Use only React hooks. No external package imports. No Next.js router. No fetch calls to external APIs. Everything self-contained.`;
 
-  const userMessage = isEdit
+  const textContent = isEdit
     ? `Here is the current app code:\n\n${existingCode}\n\nEdit request: ${prompt}\n\nReturn the COMPLETE updated code.`
     : `Build this app: ${prompt}`;
+
+  // Build user message — multimodal if images are provided
+  let userMessage: string | Array<Record<string, unknown>>;
+  if (images && Array.isArray(images) && images.length > 0) {
+    const content: Array<Record<string, unknown>> = [];
+    for (const img of images) {
+      content.push({
+        type: "image_url",
+        image_url: { url: img },
+      });
+    }
+    content.push({ type: "text", text: textContent });
+    userMessage = content;
+  } else {
+    userMessage = textContent;
+  }
 
   const messages = [
     { role: "system", content: systemPrompt },
@@ -47,6 +63,8 @@ Use only React hooks. No external package imports. No Next.js router. No fetch c
     stream: true,
     isEdit,
     promptLength: prompt?.length,
+    hasImages: !!(images && images.length),
+    imageCount: images?.length || 0,
   });
 
   try {
